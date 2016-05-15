@@ -11,6 +11,8 @@ no warnings 'experimental::signatures';
 
 use Data::Dumper;
 
+binmode(STDOUT, ":utf8");
+
 # Compare,
 #   CPAN::IndexPod
 #   Pod::Index
@@ -115,22 +117,29 @@ use Mojo::Path;
 
 my @file_list;
 
-foreach my $index_it (@ARGV) {
-    # Look for module in 
-    my @module_paths = File::Find::Rule->file()->name("${index_it}.pod","${index_it}.pm")->in(@INC);
-    # Now we have path to the Perl Module or its document.
-    my @files;
-    my $module_file = $module_paths[0];
-    push @files, $module_file;  # The module file itself
+# We are passed a list of things, which can be Perl module names,
+# explicit filenames, or explict directories.
 
-    my $index_dir = $module_file =~ s/\.\w+$//r;
+foreach my $index_it (@ARGV) { # List of things to index
+    my $index_dir;  # Directory for this thing
+    my @files;      # Found files for this thing
+
+    if ($index_it =~ m{/}) {
+        $index_dir = $index_it; # simply add directory
+    } else {
+        my @module_paths = File::Find::Rule->file()->
+          name("${index_it}.pod","${index_it}.pm")->in(@INC);
+        # Now we have path to the Perl Module or its document.
+        my $module_file = $module_paths[0];
+        push @files, $module_file;  # The module file itself
+        $index_dir = $module_file =~ s/\.\w+$//r;
+    }
     if (-d $index_dir) {
-        # my $index_path = Mojo::Path->new($index_it);
-        # my $index_dir = $index_path->to_dir;
-
         push @files, File::Find::Rule->file()
           ->name( '*.pm', '*.pod' )
             ->in( $index_dir );
+    } elsif (-f $index_dir) {
+        push @files, $index_dir; # Ah, a plain text file; index it.
     }
 
     push @file_list, @files;
@@ -138,6 +147,7 @@ foreach my $index_it (@ARGV) {
 
 foreach my $parse_file (@file_list) {
     $current_file = $parse_file;
+    # WL 2016-05-15 This does not seem to parse UTF-8 properly
     my $pod = Pod::Simple::SimpleTree->new->parse_file($parse_file);
     parse_document(@{$pod->root});
 }
