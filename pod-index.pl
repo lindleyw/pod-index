@@ -156,7 +156,7 @@ sub clean_heading ($original) {
     # Clean headings for index display
     $original =~ s/^\s+//;
     $original =~ s/\smean\?$//;
-    if ($original =~ m/^((?:(?:who|what|when|where|which|why|how|is|are|a|an|do|does|don't|doesn't|can|not|I|need|to|about|did|my|the)\s+|error\s+"|message\s+")+)(.*)$/i) {
+    if ($original =~ m/^((?:(?:who|what|when|where|which|why|how|is|are|a|an|do|does|don't|doesn't|can|not|I|need|to|about|did|my|the|there)\s+|error\s+"|message\s+")+)(.*)$/i) {
 	my ($prefix, $main) = ($1, ucfirst($2));
 	$main =~ s/[?"]//g;
 	# $prefix =~ s/[?"]//g;
