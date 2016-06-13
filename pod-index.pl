@@ -24,11 +24,6 @@ binmode(STDOUT, ":utf8");
 # Original one-liner (sh)
 # grep -r head2 . | perl -n -e 'chomp; s/:=head./:/; s{\./}{}; my($fil,$head)=split /:/;$href=$head;$href=~s/^\s//;$href=~s/\s/-/g;$fil=~s{\..+}{}g;$fil=~s{/}{::}g;print "$head: <a href=https://metacpan.org/pod/$fil#$href>$fil</a><br>\n"' | sort | uniq >/tmp/f.html
 
-# Evil global variables
-
-my $current_file;
-my $current_heading;
-
 sub plaintext_of (@subnodes) {
     my $accreted_text = '';
     foreach my $n (@subnodes) {
@@ -48,7 +43,7 @@ sub strip_extension ($filename) {
     return $filename;
 }
 
-# sub convert_to_ 
+################
 
 sub convert_to_href_text ($human_text) {
     $human_text =~ s/(\s|\(|=|\[)/-/g;
@@ -62,7 +57,7 @@ sub convert_local_path_to_href ($file) {
     return $file;
 }
 
-# More evil globals.
+# Evil globals.
 
 # Maps local filename to manpage name.  Based on the =head1 NAME value.
 my %file_manpage;
@@ -76,80 +71,41 @@ sub save_definition ($in_file, $refname, $display_name = $refname) {
 }
 
 sub save_file_manpage ($filename, $manpage) {
-    $file_manpage{strip_extension($current_file)} = $manpage;
+    $file_manpage{strip_extension($filename)} = $manpage;
 }
 
-my $save_next_text_as_module_name = 0;
+{ 
+    my $current_file;
+    my $current_heading;
+    my $save_next_text_as_module_name = 0;
 
-sub parse_entity ($element, $attrs, @subnodes) {
-    if ($element =~ /^head(\d)/) {
-	my $level = $1;
-	$current_heading = plaintext_of(@subnodes);
-	if ($level == 1 && (lc($current_heading) eq 'name')) {
-	    $save_next_text_as_module_name = 1;
-	} elsif ($level == 2) {
-	    save_definition ( $current_file, $current_heading );
-	}
-    } elsif ($save_next_text_as_module_name && $element =~ /^para$/i ) {
-	$save_next_text_as_module_name = 0;
-	$current_heading = plaintext_of(@subnodes);
-	$current_heading =~ m/^\s*(\S+)/;
-	my $firstword = $1;
-	save_file_manpage($current_file, $firstword);
-    }
-}
-
-sub parse_document ($, $, @entities) {
-    $current_heading = undef;
-    $save_next_text_as_module_name = 0;
-    foreach my $ent (@entities) {
-	parse_entity (@{$ent});
-    }
-}
-
-# Accepts a list of module names.  e.g., "Mojo Mojolicious"
-# From this get a list of filenames in the Perl directory
-# Create a hash whose keys are all the (*.pm, *.pod) files under those pathnames.
-# Give POD files preference: remove any x/y.pm where x/y.pod exists.
-
-use File::Find::Rule;
-use Mojo::Path;
-
-my @file_list;
-
-# We are passed a list of things, which can be Perl module names,
-# explicit filenames, or explict directories.
-
-foreach my $index_it (@ARGV) { # List of things to index
-    my $index_dir;  # Directory for this thing
-    my @files;      # Found files for this thing
-
-    if ($index_it =~ m{/}) {
-        $index_dir = $index_it; # simply add directory
-    } else {
-        my @module_paths = File::Find::Rule->file()->
-          name("${index_it}.pod","${index_it}.pm")->in(@INC);
-        # Now we have path to the Perl Module or its document.
-        my $module_file = $module_paths[0];
-        push @files, $module_file;  # The module file itself
-        $index_dir = $module_file =~ s/\.\w+$//r;
-    }
-    if (-d $index_dir) {
-        push @files, File::Find::Rule->file()
-          ->name( '*.pm', '*.pod' )
-            ->in( $index_dir );
-    } elsif (-f $index_dir) {
-        push @files, $index_dir; # Ah, a plain text file; index it.
+    sub parse_entity ($element, $attrs, @subnodes) {
+        if ($element =~ /^head(\d)/) {
+            my $level = $1;
+            $current_heading = plaintext_of(@subnodes);
+            if ($level == 1 && (lc($current_heading) eq 'name')) {
+                $save_next_text_as_module_name = 1;
+            } elsif ($level == 2) {
+                save_definition ( $current_file, $current_heading );
+            }
+        } elsif ($save_next_text_as_module_name && $element =~ /^para$/i ) {
+            $save_next_text_as_module_name = 0;
+            $current_heading = plaintext_of(@subnodes);
+            $current_heading =~ m/^\s*(\S+)/;
+            my $firstword = $1;
+            save_file_manpage($current_file, $firstword);
+        }
     }
 
-    push @file_list, @files;
-}
-
-foreach my $parse_file (@file_list) {
-    $current_file = $parse_file;
-    # WL 2016-05-15 This does not seem to parse UTF-8 properly
-    my $pod = Pod::Simple::SimpleTree->new->parse_file($parse_file);
-    parse_document(@{$pod->root});
+    sub parse_document ($parse_file, $element_name, $attrs, @entities) {
+        # called with root node of a POD document
+        $current_heading = undef;
+        $current_file = $parse_file;
+        $save_next_text_as_module_name = 0;
+        foreach my $ent (@entities) {
+            parse_entity (@{$ent});
+        }
+    }
 }
 
 sub clean_heading ($original) {
@@ -192,6 +148,49 @@ sub clean_heading ($original) {
     return $original;
 }
 
+# Accepts a list of module names.  e.g., "Mojo Mojolicious"
+# From this get a list of filenames in the Perl directory
+# Create a hash whose keys are all the (*.pm, *.pod) files under those pathnames.
+# Give POD files preference: remove any x/y.pm where x/y.pod exists.
+
+use File::Find::Rule;
+use Mojo::Path;
+
+my @file_list;
+
+# We are passed a list of things, which can be Perl module names,
+# explicit filenames, or explict directories.
+
+foreach my $index_it (@ARGV) { # List of things to index
+    my $index_dir;  # Directory for this thing
+    my @files;      # Found files for this thing
+
+    if ($index_it =~ m{(/|\.)}) {
+        $index_dir = $index_it; # simply add file or directory
+    } else {
+        my @module_paths = File::Find::Rule->file()->
+          name("${index_it}.pod","${index_it}.pm")->in(@INC);
+        # Now we have path to the Perl Module or its document.
+        my $module_file = $module_paths[0];
+        push @files, $module_file;  # The module file itself
+        $index_dir = $module_file =~ s/\.\w+$//r;
+    }
+    if (-d $index_dir) {
+        push @files, File::Find::Rule->file()
+          ->name( '*.pm', '*.pod' )
+            ->in( $index_dir );
+    } elsif (-f $index_dir) {
+        push @files, $index_dir; # Ah, a plain text file; index it.
+    }
+
+    push @file_list, @files;
+}
+
+foreach my $parse_file (@file_list) {
+    # WL 2016-05-15 This does not seem to parse UTF-8 properly
+    my $pod = Pod::Simple::SimpleTree->new->parse_file($parse_file);
+    parse_document($parse_file, @{$pod->root});
+}
 
 foreach my $r (sort {fc($a) cmp fc($b)} keys %references) {
     my $new = clean_heading($r);
@@ -202,58 +201,49 @@ foreach my $r (sort {fc($a) cmp fc($b)} keys %references) {
     }
 }
 
-print "<html><head><title>Cross-reference</title></head><body>\n";
+################
 
-print <<HEAD;
-<h2>Perl Manpage Index</h2>
-<p class="pod-listing">Covers the following:
-HEAD
+use Mojo::DOM;
+
+my $dom = Mojo::DOM->new("<!DOCTYPE html><head></head><body></body></html>");
+
+$dom->at('head')->append_content('<title>Cross-Reference</title>');
+
+$dom->at('body')->append_content('<h2>Perl Manpage Index</h2>');
+$dom->at('body')->append_content('<p id="pod-listing">Covers the following:</p>');
+$dom->at('body')->append_content('<dl id="heading-listing"></dl>');
 
 foreach my $m (sort values %file_manpage) {
     if (index($m, '::') < 0) {
-        print "<br />";
+        $dom->at('#pod-listing')->append_content('<br />');
     }
-    print qq(<a href="https://metacpan.org/pod/$m">$m</a> );
+    $dom->at('#pod-listing')->append_content(qq(<a href="https://metacpan.org/pod/$m">$m</a> ));
 }
-
-print <<HEAD;
-</p>
-<hr>
-HEAD
+$dom->at('#pod-listing')->append_content('<br /><hr />');
 
 my @headings = sort {fc($a) cmp fc($b)} keys %references;
 my %thumbs;
 for (@headings) {
     $thumbs{uc(substr($_,0,1))}++;
 }
-print join(' ', map {qq(<a href="#head_$_">$_</a>) } (sort keys %thumbs)) . "\n";
-
-my $last_head = '';
-
-my $in_section = 0;
+$dom->at('body')->append_content( join(' ', map {qq(<a href="#head_$_">$_</a>) } (sort keys %thumbs)) . "\n");
 
 foreach my $r (@headings) {
-    if (uc(substr($r,0,1)) ne $last_head) {
-        $last_head = uc(substr($r,0,1));
-        if ($in_section) {
-            print "</dl>\n";
-        }
-        print qq(<h3 id="head_$last_head">$last_head</h3>\n);
-        print "<dl>\n";
-        $in_section = 1;
+    my $heading = substr($r,0,1); # First character
+    my $under_heading = $dom->at("#$heading ~dl");
+    if (!defined $under_heading) {
+        $dom->at('body')->append_content(qq(<h3 id="$heading">$heading</h3><dl>\n));
+        $DB::single = 1;
+        $under_heading = $dom->at("#$heading ~dl");
     }
-    
-    print "  <dt>$r</dt>\n<dd>";
+    $under_heading->append_content("<dt>$r</dt>");
     my @sources;
     foreach my $orig_file (sort {fc($a) cmp fc($b)} keys %{$references{$r}}) { 
 	my $manpage = $file_manpage{$orig_file};
-	 # my $href = 
+        next unless defined $manpage;
 	push @sources, qq(<a href="https://metacpan.org/pod/${manpage}#$references{$r}{$orig_file}">$manpage</a>);
     }
-    print join(', ', @sources);
-    print "</dd>\n";
+    $under_heading->append_content( '<dd>'.join(', ', @sources).'</dd>' );
 }
-print "</dl>\n";
-print "</body></html>\n";
 
-1;
+print $dom;
