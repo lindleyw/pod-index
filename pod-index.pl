@@ -234,6 +234,13 @@ my $dom = Mojo::DOM->new("<!DOCTYPE html><head></head><body></body></html>");
 $dom->at('head')->append_content('<title>Cross-Reference</title>');
 
 $dom->at('body')->append_content('<h2>Perl Manpage Index</h2>');
+$dom->at('body')->append_content(<<42);
+<p style="float: right; margin-top: -2em;">
+  <small>Generated with <a href="https://github.com/lindleyw/pod-index">W. Lindley's
+  Pod Indexer</a></small>
+</p>
+42
+
 $dom->at('body')->append_content('<div id="coverage"><p id="pod-listing">Covers the following:</p></div>');
 $dom->at('body')->append_content('<div id="thumbs"></div>');
 $dom->at('body')->append_content('<div id="contents"></div>');
