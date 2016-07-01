@@ -134,6 +134,7 @@ sub clean_heading ($original) {
     # Clean headings for index display
     $original =~ s/^\s+//;
     $original =~ s/\smean\?$//;
+    $original =~ s/\?$//;
     if ($original =~ m/^((?:(?:who|what|when|where|which|why|how|is|are|a|an|do|does|don't|doesn't|can|not|I|need|to|about|did|my|the|there)\s+|error\s+"|message\s+")+)(.*)$/i) {
         my ($prefix, $main) = ($1, ucfirst($2));
         $main =~ s/[?"]//g;
@@ -229,7 +230,22 @@ foreach my $r (sort {fc($a) cmp fc($b)} references_list()) {
 
 use Mojo::DOM;
 
-my $dom = Mojo::DOM->new("<!DOCTYPE html><head></head><body></body></html>");
+my $dom = Mojo::DOM->new( <<ASIMOV );
+<!DOCTYPE html>
+<html>
+  <head>
+    <style>
+       .main {
+         columns: 20em 2;
+         -moz-columns: 20em 2;
+       };
+    </style>
+  </head>
+  <body>
+  </body>
+</html>
+
+ASIMOV
 
 $dom->at('head')->append_content('<title>Cross-Reference</title>');
 
@@ -249,10 +265,12 @@ $dom->at('#coverage')->append_content('<dl id="heading-listing"></dl>');
 # List of indexed pages
 
 foreach my $m (sort (manpages_list())) {
+    my $module_html = qq(<a href="https://metacpan.org/pod/$m">$m</a>);
     if (index($m, '::') < 0) {  # major module heading
         $dom->at('#pod-listing')->append_content('<br />');
+        $module_html = "<b>$module_html</b>";
     }
-    $dom->at('#pod-listing')->append_content(qq(<a href="https://metacpan.org/pod/$m">$m</a> ));
+    $dom->at('#pod-listing')->append_content($module_html . ' ');
 }
 $dom->at('#pod-listing')->append_content(qq(<br />\n<hr />\n));
 
@@ -267,15 +285,27 @@ $dom->at('#thumbs')->append_content( join(' ', map {qq(<a href="#head_$_">$_</a>
 
 # Alphabetical list of headings, with thumb tabs
 
+my %heading_words;
+
+foreach my $heading (@headings) {
+    $heading = clean_heading($heading);
+    my @xref_words = split(/\s+/, $heading);
+    my $first = shift @xref_words;
+    foreach my $w (@xref_words) {
+        push @{$heading_words{$w}}, $heading;
+    }
+}
+
 foreach my $heading (@headings) {
     my $tab = uc(substr($heading,0,1)); # First character
     my $under_tab = $dom->at("#head_$tab dl");
     if (!defined $under_tab) {
         $dom->at('#contents')
-          ->append_content(qq(\n<hr width="50%" />\n<div id="head_$tab" style="-moz-columns: 20em 2;"><h3>$tab</h3><dl></dl></div>\n));
+          ->append_content(qq(\n<hr width="50%" />\n<div id="head_$tab" class="main"><h3>$tab</h3><dl></dl></div>\n));
         $under_tab = $dom->at("#head_$tab dl");
     }
-    $under_tab->append_content("<dt>$heading</dt>");
+    $under_tab->append_content(qq(<dt id="$heading">$heading</dt>));
+
     my @sources;
     foreach my $orig_file (sort {fc($a) cmp fc($b)} keys %{reference_get($heading)}) { 
 	my $manpage = manpage_get($orig_file);
@@ -284,6 +314,25 @@ foreach my $heading (@headings) {
 	push @sources, qq(<a href="https://metacpan.org/pod/${manpage}#$r->{$orig_file}">$manpage</a>);
     }
     $under_tab->append_content( '<dd>'.join(', ', @sources).'</dd>' );
+
+    my @see_also;
+    my @xref_words = split(/\s+/, $heading);
+    my $first = shift @xref_words;
+    if (reference_get($first) && defined $heading_words{$first}) {
+        push @xref_words, @{$heading_words{$first}};
+    }
+    if (scalar @xref_words) {
+        foreach my $xref_word (sort @xref_words) {
+            my $reference = reference_get($xref_word) // reference_get(lc($xref_word));
+            if (defined $reference) {
+                push @see_also, qq(<a href="#$xref_word">$xref_word</a>);
+            }
+        }
+    }
+    if (scalar @see_also) {
+        $under_tab->append_content( '<dd><i>See also:</i> '.join(', ', @see_also).'</dd>' );
+    }
+
 }
 
 print $dom;
