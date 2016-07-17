@@ -53,7 +53,7 @@ binmode(STDOUT, ":utf8");
     }
 
     sub save_file_version ($filename, $version) {
-        $file_manpage{strip_extension($filename)} = $version;
+        $file_version{strip_extension($filename)} = $version;
     }
 
     sub manpages_list {
