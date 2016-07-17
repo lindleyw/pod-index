@@ -64,6 +64,12 @@ binmode(STDOUT, ":utf8");
         return $file_manpage{$_[0]};
     }
 
+    sub version_get {
+        while (my ($file, $name) = each %file_manpage) {
+            return $file_version{$file} if ($name eq $_[0]);
+        }
+    }
+
     sub references_list {
         keys %references;
     }
@@ -307,6 +313,8 @@ foreach my $m (sort (manpages_list())) {
     if (index($m, '::') < 0) {  # major module heading
         $dom->at('#pod-listing')->append_content('<br />');
         $module_html = "<b>$module_html</b>";
+        my $version = version_get($m);
+        $module_html .= " <small>(v$version)</small>" if defined $version;
     }
     $dom->at('#pod-listing')->append_content($module_html . ' ');
 }
@@ -379,8 +387,6 @@ foreach my $heading (@headings) {
         my %items = %{$items};
         my @subheads;
         foreach my $subhead (sort {fc($::a) cmp fc($b)} (keys %items)) {
-            # $DB::single=1;
-            # print STDERR $subhead, '>', $items{$subhead}, ' ';
             push @see_also, qq(<a href="#$subhead">$subhead</a>);
         }
     }
