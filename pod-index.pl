@@ -323,9 +323,12 @@ foreach my $heading (@headings) {
     }
     if (scalar @xref_words) {
         foreach my $xref_word (sort @xref_words) {
-            my $reference = reference_get($xref_word) // reference_get(lc($xref_word));
-            if (defined $reference) {
-                push @see_also, qq(<a href="#$xref_word">$xref_word</a>);
+            foreach ($xref_word, lc($xref_word), uc($xref_word)) {
+                my $reference = reference_get($_);
+                if (defined $reference) {
+                    push @see_also, qq(<a href="#$_">$xref_word</a>);
+                    last;
+                }
             }
         }
     }
