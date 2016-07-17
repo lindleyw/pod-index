@@ -11,6 +11,8 @@ no warnings 'experimental::signatures';
 
 use Data::Dumper;
 
+use List::MoreUtils qw(uniq);
+
 binmode(STDOUT, ":utf8");
 
 # Compare,
@@ -29,17 +31,29 @@ binmode(STDOUT, ":utf8");
 {
     # Maps local filename to manpage name.  Based on the =head1 NAME value.
     my %file_manpage;
+    my %file_version;
 
     # All defined references.
     my %references;
+    my %ref_under_header;
 
-    sub save_definition ($in_file, $refname, $display_name = $refname) {
+    sub save_definition ($in_file, $main_heading, $refname, $display_name = $refname) {
+        # print STDERR "   $main_heading  $refname $in_file ($display_name)\n"
+        #   if defined $main_heading;
+        if (defined $main_heading) {
+            $ref_under_header{$main_heading =~ s/(?:(\w)(\w+))/\u$1\L$2/gr}{$display_name} =
+              convert_to_href_text($refname);
+        }
         $references{$display_name}{strip_extension($in_file)} = 
           convert_to_href_text($refname);
     }
 
     sub save_file_manpage ($filename, $manpage) {
         $file_manpage{strip_extension($filename)} = $manpage;
+    }
+
+    sub save_file_version ($filename, $version) {
+        $file_manpage{strip_extension($filename)} = $version;
     }
 
     sub manpages_list {
@@ -58,26 +72,49 @@ binmode(STDOUT, ":utf8");
         return $references{$_[0]};
     }
 
+    sub ref_under_header_list {
+        return keys %ref_under_header;
+    }
+
+    sub ref_under_header_get {
+        return $ref_under_header{$_[0]};
+    }
+
     { 
         my $current_file;
         my $current_heading;
+        my $current_h1;
         my $save_next_text_as_module_name = 0;
+        my $save_next_text_as;
 
         sub parse_entity ($element, $attrs, @subnodes) {
             if ($element =~ /^head(\d)/) {
                 my $level = $1;
-                $current_heading = plaintext_of(@subnodes);
-                if ($level == 1 && (lc($current_heading) eq 'name')) {
-                    $save_next_text_as_module_name = 1;
+                my $h_text = plaintext_of(@subnodes);
+                if ($level == 1) {
+                    $current_h1 = $h_text;
+                    if (lc($current_h1) eq 'name') {
+                        $save_next_text_as = 'module_name';
+                    } elsif (lc($current_h1) eq 'version') {
+                        $save_next_text_as = 'version';
+                    }
                 } elsif ($level == 2) {
-                    save_definition ( $current_file, $current_heading );
+                    $current_heading = $h_text;
+                    save_definition ( $current_file, $current_h1, $current_heading );
                 }
-            } elsif ($save_next_text_as_module_name && $element =~ /^para$/i ) {
-                $save_next_text_as_module_name = 0;
-                $current_heading = plaintext_of(@subnodes);
-                $current_heading =~ m/^\s*(\S+)/;
-                my $firstword = $1;
-                save_file_manpage($current_file, $firstword);
+            } elsif (defined $save_next_text_as && $element =~ /^para$/i ) {
+                if ($save_next_text_as eq 'module_name') {
+                    $current_heading = plaintext_of(@subnodes);
+                    $current_heading =~ m/^\s*(\S+)/;
+                    my $firstword = $1;
+                    save_file_manpage($current_file, $firstword);
+                } elsif ($save_next_text_as eq 'version') {
+                    my $version = plaintext_of(@subnodes);
+                    $version =~ s/version//i;
+                    $version =~ s/\s+//g;
+                    save_file_version($current_file, $version);
+                }
+                undef $save_next_text_as;
             }
         }
 
@@ -221,7 +258,7 @@ foreach my $r (sort {fc($a) cmp fc($b)} references_list()) {
     my $new = clean_heading($r);
     if ($new ne $r) {
 	foreach my $orig_file (keys %{reference_get($r)}) { 
-	    save_definition( $orig_file, $r, $new);
+	    save_definition( $orig_file, undef, $r, $new);
 	}
     }
 }
@@ -250,16 +287,17 @@ ASIMOV
 $dom->at('head')->append_content('<title>Cross-Reference</title>');
 
 $dom->at('body')->append_content('<h2>Perl Manpage Index</h2>');
-$dom->at('body')->append_content(<<42);
+$dom->at('body')->append_content(<<ASIMOV);
 <p style="float: right; margin-top: -2em;">
   <small>Generated with <a href="https://github.com/lindleyw/pod-index">W. Lindley's
   Pod Indexer</a></small>
 </p>
-42
+ASIMOV
 
 $dom->at('body')->append_content('<div id="coverage"><p id="pod-listing">Covers the following:</p></div>');
 $dom->at('body')->append_content('<div id="thumbs"></div>');
 $dom->at('body')->append_content('<div id="contents"></div>');
+$dom->at('body')->append_content('<div id="sections"></div>');
 $dom->at('#coverage')->append_content('<dl id="heading-listing"></dl>');
 
 # List of indexed pages
@@ -276,7 +314,7 @@ $dom->at('#pod-listing')->append_content(qq(<br />\n<hr />\n));
 
 # Jump-to-thumb tabs
 
-my @headings = sort {fc($a) cmp fc($b)} references_list();
+my @headings = uniq sort {fc($a) cmp fc($b)} (references_list(), ref_under_header_list());
 my %thumbs;
 for (@headings) {
     $thumbs{uc(substr($_,0,1))}++;
@@ -307,13 +345,15 @@ foreach my $heading (@headings) {
     $under_tab->append_content(qq(<dt id="$heading">$heading</dt>));
 
     my @sources;
-    foreach my $orig_file (sort {fc($a) cmp fc($b)} keys %{reference_get($heading)}) { 
-	my $manpage = manpage_get($orig_file);
-        next unless defined $manpage;
-        my $r = reference_get($heading);
-	push @sources, qq(<a href="https://metacpan.org/pod/${manpage}#$r->{$orig_file}">$manpage</a>);
+    if (defined reference_get($heading)) {
+        foreach my $orig_file (sort {fc($a) cmp fc($b)} keys %{reference_get($heading)}) {
+            my $manpage = manpage_get($orig_file);
+            next unless defined $manpage;
+            my $r = reference_get($heading);
+            push @sources, qq(<a href="https://metacpan.org/pod/${manpage}#$r->{$orig_file}">$manpage</a>);
+        }
+        $under_tab->append_content( '<dd>'.join(', ', @sources).'</dd>' );
     }
-    $under_tab->append_content( '<dd>'.join(', ', @sources).'</dd>' );
 
     my @see_also;
     my @xref_words = split(/\s+/, $heading);
@@ -323,15 +363,28 @@ foreach my $heading (@headings) {
     }
     if (scalar @xref_words) {
         foreach my $xref_word (sort @xref_words) {
+            REFCAP:
             foreach ($xref_word, lc($xref_word), uc($xref_word)) {
                 my $reference = reference_get($_);
                 if (defined $reference) {
                     push @see_also, qq(<a href="#$_">$xref_word</a>);
-                    last;
+                    last REFCAP;
                 }
             }
         }
     }
+
+    my $items = ref_under_header_get($heading);
+    if (defined $items) {
+        my %items = %{$items};
+        my @subheads;
+        foreach my $subhead (sort {fc($::a) cmp fc($b)} (keys %items)) {
+            # $DB::single=1;
+            # print STDERR $subhead, '>', $items{$subhead}, ' ';
+            push @see_also, qq(<a href="#$subhead">$subhead</a>);
+        }
+    }
+
     if (scalar @see_also) {
         $under_tab->append_content( '<dd><i>See also:</i> '.join(', ', @see_also).'</dd>' );
     }
