@@ -335,7 +335,7 @@ my %heading_words;
 
 foreach my $heading (@headings) {
     $heading = clean_heading($heading);
-    my @xref_words = split(/\s+/, $heading);
+    my @xref_words = split(/(?:\s|_)+/, $heading);
     my $first = shift @xref_words;
     foreach my $w (@xref_words) {
         push @{$heading_words{$w}}, $heading;
