@@ -114,6 +114,9 @@ binmode(STDOUT, ":utf8");
                     $current_heading =~ m/^\s*(\S+)/;
                     my $firstword = $1;
                     save_file_manpage($current_file, $firstword);
+                    # "Mojo::Log" → index under last component: "Log"
+                    save_definition ( $current_file, $current_h1, 
+                                      (split /::/, $firstword)[-1] );
                 } elsif ($save_next_text_as eq 'version') {
                     my $version = plaintext_of(@subnodes);
                     $version =~ s/version//i;
@@ -306,7 +309,7 @@ $dom->at('body')->append_content('<div id="contents"></div>');
 $dom->at('body')->append_content('<div id="sections"></div>');
 $dom->at('#coverage')->append_content('<dl id="heading-listing"></dl>');
 
-# List of indexed pages
+# List of pages to be indexed
 
 foreach my $m (sort (manpages_list())) {
     my $module_html = qq(<a href="https://metacpan.org/pod/$m">$m</a>);
