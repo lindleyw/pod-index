@@ -238,13 +238,18 @@ foreach my $index_it (@ARGV) { # List of things to index
     my $index_dir;  # Directory for this thing
     my @files;      # Found files for this thing
 
-    if ($index_it =~ m{(/|\.)}) {
+    if ($index_it =~ m{(/|\.)} && (-e $index_it)) {
         $index_dir = $index_it; # simply add file or directory
     } else {
-        my @module_paths = File::Find::Rule->file()->
-          name("${index_it}.pod","${index_it}.pm")->in(@INC);
+        my @module_paths = File::Find::Rule->
+          any( File::Find::Rule->file()->name("${index_it}.pod","${index_it}.pm"),
+               File::Find::Rule->directory()->name($index_it)
+               )->in(@INC);
         # Now we have path to the Perl Module or its document.
-        my $module_file = $module_paths[0];
+        if (!scalar @module_paths) {
+            die "File or module not found";
+        }
+        my $module_file = (sort @module_paths)[0];
         push @files, $module_file;  # The module file itself
         $index_dir = $module_file =~ s/\.\w+$//r;
     }
