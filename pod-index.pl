@@ -53,7 +53,7 @@ binmode(STDOUT, ":utf8");
     }
 
     sub save_file_version ($filename, $version) {
-        $file_version{strip_extension($filename)} = $version;
+        $file_version{strip_extension($filename)} = 'v' . $version;
     }
 
     sub manpages_list {
@@ -66,8 +66,10 @@ binmode(STDOUT, ":utf8");
 
     sub version_get {
         while (my ($file, $name) = each %file_manpage) {
-            return $file_version{$file} if ($name eq $_[0]);
+            return $file_version{$file}
+              if ($name eq $_[0]);
         }
+        undef;
     }
 
     sub references_list {
@@ -317,7 +319,7 @@ foreach my $m (sort (manpages_list())) {
         $dom->at('#pod-listing')->append_content('<br />');
         $module_html = "<b>$module_html</b>";
         my $version = version_get($m);
-        $module_html .= " <small>(v$version)</small>" if defined $version;
+        $module_html .= " <small>($version)</small>" if defined $version;
     }
     $dom->at('#pod-listing')->append_content($module_html . ' ');
 }
