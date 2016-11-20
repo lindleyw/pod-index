@@ -243,7 +243,7 @@ foreach my $index_it (@ARGV) { # List of things to index
     } else {
         my @module_paths = File::Find::Rule->
           any( File::Find::Rule->file()->name("${index_it}.pod","${index_it}.pm"),
-               File::Find::Rule->directory()->name($index_it)
+               # File::Find::Rule->directory()->name($index_it)
                )->in(@INC);
         # Now we have path to the Perl Module or its document.
         if (!scalar @module_paths) {
