@@ -5,15 +5,52 @@ use Pod::Simple::SimpleTree;
 use warnings;
 use strict;
 
-use v5.20;
-use feature 'signatures';
-no warnings 'experimental::signatures';
-
 use Data::Dumper;
 
 use List::MoreUtils qw(uniq);
 
+use Mojolicious::Lite;
+use Mojo::SQLite;
+
+use v5.20;
+use feature 'signatures';
+no warnings 'experimental::signatures';
+
+my $dbfile = 'data/pod_index.db';
+
+app->config(hypnotoad => {listen => ['http://*:3000']});
+
 binmode(STDOUT, ":utf8");
+
+if (! -f $dbfile) {
+  print STDERR "database $dbfile does not exist.  Create one like so:\n  sqlite3 $dbfile \"create table test (id int primary key, stuff text)\"\n";
+  exit 1;
+}
+if (! -r $dbfile) {
+  print STDERR "database $dbfile exists but is not readable.\n";
+  exit 1;
+}
+
+my $d = Mojo::SQLite->new($dbfile);
+if(! $d->db->ping) {
+  print STDERR "Failed to open database $dbfile.";
+  exit 1;
+}
+$d->db->disconnect;
+
+helper sqlite => sub { state $sql = Mojo::SQLite->new($dbfile) };
+
+# headers for cache control and cross-site configuration so db web interface can be on 
+# a different host/port than the one serving the front end
+hook after_dispatch => sub {
+  my $c = shift;
+  $c->res->headers->header('Access-Control-Allow-Origin' => $origins); 
+  $c->res->headers->header('Access-Control-Allow-Methods' => 'POST,GET,PUT,DELETE,OPTIONS');
+  $c->res->headers->header('Access-Control-Allow-Headers' => 'accept,content-type');
+  $c->res->headers->header('Pragma' => 'no-cache');
+  $c->res->headers->header('Cache-Control' => 'no-cache');
+};
+
 
 # Compare,
 #   CPAN::IndexPod
@@ -228,7 +265,6 @@ sub clean_heading ($original) {
 
 use File::Find::Rule;
 use Mojo::Path;
-use List::Util;
 
 my @file_list;
 
@@ -236,33 +272,30 @@ my @file_list;
 # explicit filenames, or explict directories.
 
 foreach my $index_it (@ARGV) { # List of things to index
-    my @index_dirs=();  # Directory for this thing
+    my $index_dir;  # Directory for this thing
     my @files;      # Found files for this thing
 
     if ($index_it =~ m{(/|\.)} && (-e $index_it)) {
-        push @index_dirs, $index_it; # simply add file or directory
+        $index_dir = $index_it; # simply add file or directory
     } else {
-        my @module_paths = List::Util::uniq
-        ( File::Find::Rule->
+        my @module_paths = File::Find::Rule->
           any( File::Find::Rule->file()->name("${index_it}.pod","${index_it}.pm"),
-               File::Find::Rule->directory()->name($index_it)
-             )->in(@INC));
+               # File::Find::Rule->directory()->name($index_it)
+               )->in(@INC);
         # Now we have path to the Perl Module or its document.
         if (!scalar @module_paths) {
             die "File or module not found";
         }
         my $module_file = (sort @module_paths)[0];
         push @files, $module_file;  # The module file itself
-        push @index_dirs, List::Util::uniq( sort map {  s/\.\w+$//r } @module_paths );
+        $index_dir = $module_file =~ s/\.\w+$//r;
     }
-    foreach my $index_dir (@index_dirs) {
-        if (-d $index_dir) {
-            push @files, File::Find::Rule->file()
-            ->name( '*.pm', '*.pod' )
+    if (-d $index_dir) {
+        push @files, File::Find::Rule->file()
+          ->name( '*.pm', '*.pod' )
             ->in( $index_dir );
-        } elsif (-f $index_dir) {
-            push @files, $index_dir; # Ah, a plain text file; index it.
-        }
+    } elsif (-f $index_dir) {
+        push @files, $index_dir; # Ah, a plain text file; index it.
     }
 
     push @file_list, @files;
@@ -334,32 +367,9 @@ foreach my $m (sort (manpages_list())) {
 }
 $dom->at('#pod-listing')->append_content(qq(<br />\n<hr />\n));
 
-my @headings = uniq sort {fc($a) cmp fc($b)} (references_list(), ref_under_header_list());
-
-my %heading_words;
-
-foreach my $heading (@headings) {
-    $heading = clean_heading($heading);
-    my @xref_words = split(/(?:\s|_)+/, $heading);
-    # print STDERR $heading.'->'.join(',',@xref_words)."... " if scalar @xref_words;
-    my $first = shift @xref_words;
-    foreach my $w (@xref_words) {
-        push @{$heading_words{$w}}, $heading;
-    }
-}
-
-my %xref_stopwords = map {($_, 1)} qw(is from the a an are has);
-{
-    my %hh = map {($_, 1)} @headings;
-    # Add any cross-references not existing:
-    push @headings, grep { /^\w/ && !exists $xref_stopwords{$_} && !exists $hh{$_}} sort keys %heading_words;
-}
-
-# Sort again, after additions
-@headings = uniq sort {fc($a) cmp fc($b)} @headings;
-
 # Jump-to-thumb tabs
 
+my @headings = uniq sort {fc($a) cmp fc($b)} (references_list(), ref_under_header_list());
 my %thumbs;
 for (@headings) {
     $thumbs{uc(substr($_,0,1))}++;
@@ -367,6 +377,17 @@ for (@headings) {
 $dom->at('#thumbs')->append_content( join(' ', map {qq(<a href="#head_$_">$_</a>) } (sort keys %thumbs)) . "\n");
 
 # Alphabetical list of headings, with thumb tabs
+
+my %heading_words;
+
+foreach my $heading (@headings) {
+    $heading = clean_heading($heading);
+    my @xref_words = split(/(?:\s|_)+/, $heading);
+    my $first = shift @xref_words;
+    foreach my $w (@xref_words) {
+        push @{$heading_words{$w}}, $heading;
+    }
+}
 
 foreach my $heading (@headings) {
     my $tab = uc(substr($heading,0,1)); # First character
@@ -378,7 +399,6 @@ foreach my $heading (@headings) {
     }
     $under_tab->append_content(qq(<dt id="$heading">$heading</dt>));
 
-    my $has_listing;
     my @sources;
     if (defined reference_get($heading)) {
         foreach my $orig_file (sort {fc($a) cmp fc($b)} keys %{reference_get($heading)}) {
@@ -388,15 +408,12 @@ foreach my $heading (@headings) {
             push @sources, qq(<a href="https://metacpan.org/pod/${manpage}#$r->{$orig_file}">$manpage</a>);
         }
         $under_tab->append_content( '<dd>'.join(', ', @sources).'</dd>' );
-        $has_listing++;
     }
 
     my @see_also;
-    my @xref_words = split(/(\s+|_)/, $heading);
+    my @xref_words = split(/\s+/, $heading);
     my $first = shift @xref_words;
-    if ( #reference_get($first) &&
-        !exists $xref_stopwords{$first} &&
-        defined $heading_words{$first}) {
+    if (reference_get($first) && defined $heading_words{$first}) {
         push @xref_words, @{$heading_words{$first}};
     }
     if (scalar @xref_words) {
@@ -422,11 +439,23 @@ foreach my $heading (@headings) {
     }
 
     if (scalar @see_also) {
-        $under_tab->append_content( '<dd><i>See'.
-                                    ($has_listing ? ' also' : '').
-                                    ':</i> '.join(', ', @see_also).'</dd>' );
+        $under_tab->append_content( '<dd><i>See also:</i> '.join(', ', @see_also).'</dd>' );
     }
 
 }
 
 print $dom;
+
+app->start;
+__DATA__
+
+@@ index.html.ep
+<!DOCTYPE html>
+<html>
+  <head><title>POD Indexer</title></head>
+  <body>
+    <h1></h1>
+    <h2></h2>
+  </body>
+</html>
+
