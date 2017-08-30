@@ -348,7 +348,7 @@ foreach my $heading (@headings) {
     }
 }
 
-my %xref_stopwords = map {($_, 1)} qw(is from the a an are has);
+my %xref_stopwords = map {($_, 1)} qw(a an are has is from to the);
 {
     my %hh = map {($_, 1)} @headings;
     # Add any cross-references not existing:
