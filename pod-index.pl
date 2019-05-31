@@ -184,6 +184,7 @@ sub clean_heading ($original) {
     return '' if $original =~ /^changes\s+in\s/i;  # "Changes in version 3" not saved at all
     $original =~ s/\smean\?$//;      # "What does Xyzzy mean?" saved as just "Xyzzy" with below regex
     $original =~ s/\?$//;
+    $original =~ s/^\W+//;      # remove leading "..." and whatnot
     if ($original =~ m/^((?:(?:who|what|when|where|which|why|how|is|are|a|an|do|does|don't|doesn't|can|not|I|need|to|about|did|my|the|there)\s+|error\s+"|message\s+")+)(.*)$/i) {
         my ($prefix, $main) = ($1, ucfirst($2));
         $main =~ s/[?"]//g;
@@ -377,6 +378,7 @@ foreach my $heading (@headings) {
           ->append_content(qq(\n<hr width="50%" />\n<div id="head_$tab" class="main"><h3>$tab</h3><dl></dl></div>\n));
         $under_tab = $dom->at("#head_$tab dl");
     }
+    # ; $DB::single = 1;
     $under_tab->append_content(qq(<dt id="$heading">$heading</dt>));
 
     my $has_listing;
