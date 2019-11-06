@@ -253,7 +253,7 @@ foreach my $index_it (@ARGV) { # List of things to index
         if (!scalar @module_paths) {
             die "File or module not found";
         }
-        my $module_file = (sort @module_paths)[0];
+        my $module_file = (sort grep { -f $_ } @module_paths)[0];
         push @files, $module_file;  # The module file itself
         push @index_dirs, List::Util::uniq( sort map {  s/\.\w+$//r } @module_paths );
     }
@@ -316,11 +316,10 @@ $dom->at('body')->append_content(<<ASIMOV);
 </p>
 ASIMOV
 
-$dom->at('body')->append_content('<div id="coverage"><p id="pod-listing">Covers the following:</p></div>');
-$dom->at('body')->append_content('<div id="thumbs"></div>');
-$dom->at('body')->append_content('<div id="contents"></div>');
-$dom->at('body')->append_content('<div id="sections"></div>');
-$dom->at('#coverage')->append_content('<dl id="heading-listing"></dl>');
+foreach my $div (qw(coverage thumbs contents sections)) {
+    $dom->at('body')->append_content("<div id='$div'></div>");
+}
+$dom->at('#coverage')->append_content('<p id="pod-listing">Covers the following:</p><dl id="heading-listing"></dl>');
 
 # List of pages to be indexed
 
