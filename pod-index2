@@ -1,0 +1,70 @@
+#!/usr/bin/env perl
+
+use v5.32;
+
+use strict;
+use warnings;
+
+use lib 'lib';
+use feature 'signatures';
+no warnings 'experimental::signatures';
+
+use List::MoreUtils qw(uniq);
+
+# use Pod::Headings;
+use Pod::Definitions;
+
+binmode(STDOUT, ":utf8");
+
+# Accepts a list of module names.  e.g., "Mojo Mojolicious"
+# From this get a list of filenames in the Perl directory
+# Create a hash whose keys are all the (*.pm, *.pod) files under those pathnames.
+# Give POD files preference: remove any x/y.pm where x/y.pod exists.
+
+use File::Find::Rule;
+use Mojo::Path;
+
+my @file_list;
+
+# We are passed a list of things, which can be Perl module names,
+# explicit filenames, or explict directories.
+
+foreach my $index_it (@ARGV) { # List of things to index
+    my $index_dir;  # Directory for this thing
+    my @files;      # Found files for this thing
+
+    if ($index_it =~ m{(/|\.)} && (-e $index_it)) {
+        $index_dir = $index_it; # simply add file or directory
+    } else {
+        my @module_paths = File::Find::Rule->
+          any( File::Find::Rule->file()->name("${index_it}.pod","${index_it}.pm"),
+               # File::Find::Rule->directory()->name($index_it)
+               )->in(@INC);
+        # Now we have path to the Perl Module or its document.
+        if (!scalar @module_paths) {
+            die "File or module not found";
+        }
+        my $module_file = (sort @module_paths)[0];
+        push @files, $module_file;  # The module file itself
+        $index_dir = $module_file =~ s/\.\w+$//r;
+    }
+    if (-d $index_dir) {
+        push @files, File::Find::Rule->file()
+          ->name( '*.pm', '*.pod' )
+            ->in( $index_dir );
+    } elsif (-f $index_dir) {
+        push @files, $index_dir; # Ah, a plain text file; index it.
+    }
+
+    push @file_list, @files;
+}
+
+foreach my $parse_file (@file_list) {
+    # TODO: 2020-10-11 Verify operation with UTF-8 pods.
+    # print " $parse_file\n";
+    my $pod_file = Pod::Definitions->new();
+    $pod_file->parse_file($parse_file);
+
+    # TODO: 2020-10-11 Save the $pod_file object for indexing.
+}
+

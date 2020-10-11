@@ -9,9 +9,8 @@ no warnings 'experimental::signatures';
 
 ################
 
-use Pod::Simple::SimpleTree;
 use List::MoreUtils qw(uniq);
-use Mojo::SQLite;
+# use Mojo::SQLite;
 
 use Data::Dumper;
 
