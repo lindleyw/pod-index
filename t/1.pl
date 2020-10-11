@@ -18,16 +18,20 @@ my $p = Pod::Headings->new(
         $parser->{_save_head1} = $plaintext;
         undef $parser->{_save_head2};
         $parser->{_save_first_para} = 1;
+        1;
     },
     head2 => sub ($parser, $elem, $attrs, $plaintext) {
         print " $elem: $parser->{_save_head1}: $plaintext\n";
         $parser->{_save_head2} = $plaintext;
         $parser->{_save_first_para} = 1;
+        1;
     },
     Para => sub ($parser, $elem, $attrs, $plaintext) {
-        print " .... text: $plaintext\n";
+        print " .... text: $plaintext\n" if $parser->{_save_first_para};
         $parser->{_save_first_para} = 0;
-    }
+        1;
+    },
+    L => 1,  # Return 0 to drop the plaintext passed to the containing element
 );
 
 ### TODO:

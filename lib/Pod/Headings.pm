@@ -14,109 +14,116 @@ no warnings 'experimental::signatures';
 sub new ($class, @args) {
     my $self = $class->SUPER::new();
     $self->{handlers} = {@args}; # if scalar @args;
+    $self->{_elements} = [];
     return $self;
 }
 
-## NOTE: Does not handle nested elements.
-
 sub _handle_element_start ($parser, $element_name, $attr_hash_r) {
-    # print " ( $element_name ) ";
+
     return unless defined $parser->{handlers}{$element_name};
-    $parser->{_heading_save} = $element_name;
-    $parser->{_save_text} = undef;
-    $parser->{_save_attrs} = $attr_hash_r;
+    push @{$parser->{_elements}}, { heading => $element_name, text => '', attrs=> $attr_hash_r };
 }
 
 sub _handle_element_end ($parser, $element_name, $attr_hash_r = undef) {
-    return unless $element_name eq $parser->{_heading_save};
+
+    return unless scalar @{$parser->{_elements}} && ($element_name eq ${$parser->{_elements}}[-1]->{heading});
+    
+    my $propagate_text = 0;
+    my $this_element = pop @{$parser->{_elements}};
     if (ref $parser->{handlers}{$element_name} eq 'CODE') {
-        $parser->{handlers}{$element_name}->($parser, $element_name, $parser->{_save_attrs}, $parser->{_save_text});
+        $propagate_text = $parser->{handlers}{$element_name}->($parser, $element_name, $this_element->{attrs}, $this_element->{text});
+    } else {
+        $propagate_text = $parser->{handlers}{$element_name};
     }
+
+    if ($propagate_text) {
+        if (scalar @{$parser->{_elements}}) {
+            ${$parser->{_elements}}[-1]->{text} .= $this_element->{text};
+        }
+    }
+
 }
 
 sub _handle_text ($parser, $text) {
-    # print " [$text]";
-    $parser->{_save_text} .= $text if defined $parser->{_heading_save};
+
+    ${$parser->{_elements}}[-1]->{text} .= $text if scalar @{$parser->{_elements}};
+
 }
-
-# TODO
-# head2 needs to call a handler with the text of its containing head1.
-
-
-
 
 1;
 
 __END__
 
-    { 
-        my $current_file;
-        my $current_heading;
-        my $current_h1;
-        my $save_next_text_as_module_name = 0;
-        my $save_next_text_as;
+=head1 NAME
 
-        sub parse_entity ($element, $attrs, @subnodes) {
-            if ($element =~ /^head(\d)/) {
-                my $level = $1;
-                my $h_text = plaintext_of(@subnodes);
-                if ($level == 1) {
-                    $current_h1 = $h_text;
-                    if (lc($current_h1) eq 'name') {
-                        $save_next_text_as = 'module_name';
-                    } elsif (lc($current_h1) eq 'version') {
-                        $save_next_text_as = 'version';
-                    } elsif (lc($current_h1) eq 'see also') {
-                        $save_next_text_as = 'see_also';
-                    }
-                    else { print STDERR " --- $current_h1\n"; }
-                } elsif ($level == 2) {
-                    $current_heading = $h_text;
-                    save_definition ( $current_file, $current_h1, $current_heading );
-                }
-            } elsif (defined $save_next_text_as && $element =~ /^para$/i ) {
-                if ($save_next_text_as eq 'module_name') {
-                    $current_heading = plaintext_of(@subnodes);
-                    $current_heading =~ m/^\s*(\S+)/;
-                    my $firstword = $1;
-                    save_file_manpage($current_file, $firstword);
-                    # "Mojo::Log" → index under last component: "Log"
-                    save_definition ( $current_file, $current_h1, 
-                                      (split /::/, $firstword)[-1] );
-                } elsif ($save_next_text_as eq 'version') {
-                    my $version = plaintext_of(@subnodes);
-                    $version =~ s/version//i;
-                    $version =~ s/\s+//g;
-                    save_file_version($current_file, $version);
-                } elsif ($save_next_text_as eq 'see_also') {
-                    save_see_also($current_file, @subnodes);
-                    $DB::single = 1;
-                    print "x";
-                }
-                undef $save_next_text_as;
-            }
-        }
+Pod::Headings -- extract headings and paragraphs (and other elements) from Pod
 
-        sub parse_document ($parse_file, $element_name, $attrs, @entities) {
-            # called with root node of a POD document
-            $current_heading = undef;
-            $current_file = $parse_file;
-            $save_next_text_as_module_name = 0;
-            foreach my $ent (@entities) {
-                parse_entity (@{$ent});
-            }
-        }
+=head1 SYNOPSIS
+
+  my $p = Pod::Headings->new(
+    head1 => sub ($parser, $elem, $attrs, $plaintext) {
+        print " $elem: $plaintext\n";
+        $parser->{_save_head1} = $plaintext;
+        undef $parser->{_save_head2};
+        $parser->{_save_first_para} = 1;
+        1;
+    },
+    head2 => sub ($parser, $elem, $attrs, $plaintext) {
+        print " $elem: $parser->{_save_head1}: $plaintext\n";
+        $parser->{_save_head2} = $plaintext;
+        $parser->{_save_first_para} = 1;
+        1;
+    },
+    Para => sub ($parser, $elem, $attrs, $plaintext) {
+        print " .... text: $plaintext\n" if $parser->{_save_first_para};
+        $parser->{_save_first_para} = 0;
+        1;
+    },
+    L => 1,  # Return 0 to drop the plaintext passed to the containing element
     }
+  );
 
+=head1 DESCRIPTION
 
-sub xxxxxxx {
-    my $pod = Pod::Simple::SimpleTree->new->parse_file($parse_file);
-    parse_document($parse_file, @{$pod->root});
+This class is primarily of interest to persons wishing to extract
+headings from Pod, as when indexing the functions documented within a
+given Pod.
 
-}
+Call new() with a list of elements that your code will handle. Each
+element name should be followed either by a true/false value, or by a
+coderef which returns true/false.  The truth value determines whether
+any plaintext contained in that element will be propagated to the
+containing element.
 
+A supplied coderef will be called, at the end of handling the given
+element, with four arguments:
 
+=over
 
-1;
+=item * A reference to the calling parser object
 
-__END__
+=item * The name of the element
+
+=item * The attributes of the element (from its opening)
+
+=item * The entire plaintext contained in the element
+
+=back
+
+This is a subclass of L<Pod::Simple> and inherits all its methods.
+
+=head1 SEE ALSO
+
+L<Pod::Simple>
+
+=head1 SUPPORT
+
+This module is managed in an open GitHub repository,
+(( link here )) Feel free to fork and contribute, or to clone and send patches.
+
+=head1 AUTHOR
+
+This module was written and is maintained by William Lindley
+<wlindley@cpan.org>.
+
+=cut

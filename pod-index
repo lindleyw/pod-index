@@ -1,56 +1,71 @@
 #!/usr/bin/env perl
 
-use Pod::Simple::SimpleTree;
-
+use lib 'lib';
+use v5.20;
 use warnings;
 use strict;
-
-use Data::Dumper;
-
-use List::MoreUtils qw(uniq);
-
-use Mojolicious::Lite;
-use Mojo::SQLite;
-
-use v5.20;
 use feature 'signatures';
 no warnings 'experimental::signatures';
 
-my $dbfile = 'data/pod_index.db';
+################
 
-app->config(hypnotoad => {listen => ['http://*:3000']});
+use Pod::Simple::SimpleTree;
+use List::MoreUtils qw(uniq);
+use Mojo::SQLite;
+
+use Data::Dumper;
+
+################
+
+# use Mojolicious::Lite;
+
+# app->config(hypnotoad => {listen => ['http://*:3000']});
+
+# TODO, WL 2020-10-09
+# * Replace all the HTML-producing code in this script
+#   with Mojo framework output on demand.
+# * Move all the parsing logic into an object library
 
 binmode(STDOUT, ":utf8");
 
-if (! -f $dbfile) {
-  print STDERR "database $dbfile does not exist.  Create one like so:\n  sqlite3 $dbfile \"create table test (id int primary key, stuff text)\"\n";
-  exit 1;
+my $dbfile = 'data/pod_index.db';
+undef $dbfile;
+
+if (defined $dbfile) {
+
+    # TODO, WL 2020-10-09
+    # * Actually define Migrations and populate a useful database
+    # * Put the logic into Serialize / Storable methods in the objects
+
+    if (! -f $dbfile) {
+        print STDERR "database $dbfile does not exist.  Create one like so:\n  sqlite3 $dbfile \"create table test (id int primary key, stuff text)\"\n";
+        exit 1;
+    }
+    if (! -r $dbfile) {
+        print STDERR "database $dbfile exists but is not readable.\n";
+        exit 1;
+    }
+
+    my $d = Mojo::SQLite->new($dbfile);
+    if(! $d->db->ping) {
+        print STDERR "Failed to open database $dbfile.";
+        exit 1;
+    }
+    $d->db->disconnect;
 }
-if (! -r $dbfile) {
-  print STDERR "database $dbfile exists but is not readable.\n";
-  exit 1;
-}
 
-my $d = Mojo::SQLite->new($dbfile);
-if(! $d->db->ping) {
-  print STDERR "Failed to open database $dbfile.";
-  exit 1;
-}
-$d->db->disconnect;
+# helper sqlite => sub { state $sql = Mojo::SQLite->new($dbfile) };
 
-helper sqlite => sub { state $sql = Mojo::SQLite->new($dbfile) };
-
-# headers for cache control and cross-site configuration so db web interface can be on 
-# a different host/port than the one serving the front end
-hook after_dispatch => sub {
-  my $c = shift;
-  $c->res->headers->header('Access-Control-Allow-Origin' => $origins); 
-  $c->res->headers->header('Access-Control-Allow-Methods' => 'POST,GET,PUT,DELETE,OPTIONS');
-  $c->res->headers->header('Access-Control-Allow-Headers' => 'accept,content-type');
-  $c->res->headers->header('Pragma' => 'no-cache');
-  $c->res->headers->header('Cache-Control' => 'no-cache');
-};
-
+# # headers for cache control and cross-site configuration so db web interface can be on 
+# # a different host/port than the one serving the front end
+# hook after_dispatch => sub {
+#   my $c = shift;
+#   $c->res->headers->header('Access-Control-Allow-Origin' => $origins); 
+#   $c->res->headers->header('Access-Control-Allow-Methods' => 'POST,GET,PUT,DELETE,OPTIONS');
+#   $c->res->headers->header('Access-Control-Allow-Headers' => 'accept,content-type');
+#   $c->res->headers->header('Pragma' => 'no-cache');
+#   $c->res->headers->header('Cache-Control' => 'no-cache');
+# };
 
 # Compare,
 #   CPAN::IndexPod
@@ -66,9 +81,12 @@ hook after_dispatch => sub {
 ################
 
 {
+    # 'my' variables here are local to this lexical block, but sub() are accessible outside.
+
     # Maps local filename to manpage name.  Based on the =head1 NAME value.
     my %file_manpage;
     my %file_version;
+    my %file_seealso;
 
     # All defined references.
     my %references;
@@ -93,18 +111,31 @@ hook after_dispatch => sub {
         $file_version{strip_extension($filename)} = 'v' . $version;
     }
 
+    sub save_see_also($filename, @subnodes) {
+        foreach my $node (@subnodes) {
+            next unless ref $node eq 'ARRAY'; # Ignore plaintext and unknowns
+            next unless $node->[0] eq 'L'; # must be link
+            # save as:  'url' => 'https://...'  or  'pod' => 'Mojolicious'
+            push @{$file_seealso{strip_extension($filename)}}, { $node->[1]{type}, $node->[1]{to}->stringify };
+        }
+    }
+
     sub manpages_list {
         return values %file_manpage;
     }
 
-    sub manpage_get {
-        return $file_manpage{$_[0]};
+    sub manpage_get ($file) {
+        return $file_manpage{$file};
     }
 
-    sub version_get {
+    sub seealso_get ($file) {
+        return %file_seealso{$file};
+    }
+
+    sub version_get ($which) {
         while (my ($file, $name) = each %file_manpage) {
             return $file_version{$file}
-              if ($name eq $_[0]);
+              if ($name eq $which);
         }
         undef;
     }
@@ -113,8 +144,8 @@ hook after_dispatch => sub {
         keys %references;
     }
 
-    sub reference_get {
-        return $references{$_[0]};
+    sub reference_get ($file) {
+        return $references{$file};
     }
 
     sub ref_under_header_list {
@@ -142,7 +173,10 @@ hook after_dispatch => sub {
                         $save_next_text_as = 'module_name';
                     } elsif (lc($current_h1) eq 'version') {
                         $save_next_text_as = 'version';
+                    } elsif (lc($current_h1) eq 'see also') {
+                        $save_next_text_as = 'see_also';
                     }
+                    else { print STDERR " --- $current_h1\n"; }
                 } elsif ($level == 2) {
                     $current_heading = $h_text;
                     save_definition ( $current_file, $current_h1, $current_heading );
@@ -161,6 +195,10 @@ hook after_dispatch => sub {
                     $version =~ s/version//i;
                     $version =~ s/\s+//g;
                     save_file_version($current_file, $version);
+                } elsif ($save_next_text_as eq 'see_also') {
+                    save_see_also($current_file, @subnodes);
+                    $DB::single = 1;
+                    print "x";
                 }
                 undef $save_next_text_as;
             }
@@ -220,10 +258,12 @@ sub clean_heading ($original) {
     $original =~ s/^\s+//;
     $original =~ s/\smean\?$//;
     $original =~ s/\?$//;
-    if ($original =~ m/^((?:(?:who|what|when|where|which|why|how|is|are|a|an|do|does|don't|doesn't|can|not|I|need|to|about|did|my|the|there)\s+|error\s+"|message\s+")+)(.*)$/i) {
+    # How can I blip the blop? -> Blip the blop
+    # Why doesn't my socket have a packet? -> Socket have a packet
+    # Where are the pockets on the port? -> Pockets on the port
+    if ($original =~ m/^((?:(?:who|what|when|where|which|why|how|is|are|did|a|an|the|do|does|don't|doesn't|can|not|I|my|need|to|about|there)\s+|error\s+"|message\s+")+)(.*)$/i) {
         my ($prefix, $main) = ($1, ucfirst($2));
         $main =~ s/[?"]//g;
-        # $prefix =~ s/[?"]//g;
         return $main;
     }
     # Nibbling the carrot -> Carrot, nibbling the
@@ -302,7 +342,7 @@ foreach my $index_it (@ARGV) { # List of things to index
 }
 
 foreach my $parse_file (@file_list) {
-    # WL 2016-05-15 This does not seem to parse UTF-8 properly
+    # WL 2016-05-15 This does not seem to parse UTF-8 properly? Re-test to see where any problems lie.
     my $pod = Pod::Simple::SimpleTree->new->parse_file($parse_file);
     parse_document($parse_file, @{$pod->root});
 }
@@ -446,7 +486,8 @@ foreach my $heading (@headings) {
 
 print $dom;
 
-app->start;
+# app->start;
+
 __DATA__
 
 @@ index.html.ep
