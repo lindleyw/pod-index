@@ -83,7 +83,7 @@ sub _save_definition ($self, $parser, $attrs, $head1, $text) {
 }
 
 sub _save_file_manpage ($self, $text) {
-    $self->{manpage} = $text;
+    $self->{manpage} = $text unless defined $self->{manpage};
 }
 
 sub _save_file_module_leaf ($self, $text) {
@@ -106,11 +106,12 @@ sub _save_see_also ($self, $parser, $elem, $attrs, $text) {
     push @{$self->{see_also}}, $text;
 }
 
-sub parse_file ($self, $file) {
+sub parse_file ($self, $file, $podname = undef) {
 
     my $save_next;
 
     $self->{file} = $file;
+    $self->_save_file_manpage($podname) if defined $podname;
 
     return Pod::Headings->new(
         head1 => sub ($parser, $elem, $attrs, $plaintext) {
