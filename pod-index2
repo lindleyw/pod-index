@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 
-use v5.32;
+use v5.20;
 
 use strict;
 use warnings;
@@ -16,20 +16,17 @@ use Pod::Definitions;
 
 binmode(STDOUT, ":utf8");
 
-# Accepts a list of module names.  e.g., "Mojo Mojolicious"
-# From this get a list of filenames in the Perl directory
-# Create a hash whose keys are all the (*.pm, *.pod) files under those pathnames.
-# Give POD files preference: remove any x/y.pm where x/y.pod exists.
-
-#use File::Find::Rule;
-#use Mojo::Path;
+# Accepts a list of globs to be passed to Pod::Simple::Search.  If any
+# item in the list (e.g., 'Mojo') does not contain any wildcards ('*'
+# or '?'), that item will also be understood to include Pods in that
+# tree (e.g., the glob 'Mojo::*').  An item can also be an explicit
+# filename.
 
 use Pod::Simple::Search;
 
 my @file_list;
 
-# We are passed a list of things, which can be Perl module names,
-# explicit filenames, or explict directories.
+# TODO: Perhaps use one of the Getopt modules to handle switches, etc.
 
 push @file_list, @ARGV;
 
@@ -56,6 +53,3 @@ foreach my $parse_file (@file_list) {
         }
     }
 }
-
-; $DB::single =1;
-print "foo";
