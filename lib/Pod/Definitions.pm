@@ -112,7 +112,7 @@ sub parse_file ($self, $file) {
 
     $self->{file} = $file;
 
-    my $pod = Pod::Headings->new(
+    return Pod::Headings->new(
         head1 => sub ($parser, $elem, $attrs, $plaintext) {
             # print " $elem: $plaintext\n";
             $parser->{_save_head1} = $plaintext;
@@ -151,15 +151,91 @@ sub parse_file ($self, $file) {
         },
         L => 1,  # Return 0 to drop the plaintext passed to the containing element
     )->parse_file($file);
-
-    1;
 }
 
-
-
-
-
-
-
-
 1;
+
+__END__
+
+=pod
+
+=head1 NAME
+
+Pod::Definitions -- extract main sections and contained definitions from Pod
+
+=head1 SYNOPSIS
+
+    my $pod_file = Pod::Definitions->new();
+    $pod_file->parse_file($file_name);
+
+=head1 DESCRIPTION
+
+This class uses L<Pod::Headings> to parse a Pod file and extract the
+top-level (head1) headings, and the names of the functions, methods,
+events, or such as documented therein.
+
+Heading names, presumed to be written in the English language, are
+simplifed for indexing purposes. (See the internal C<_clean_heading()>
+routine for the gory details.)  For example:
+
+    What is the Q function?               -> Q function
+    How can I blip the blop?              -> Blip the blop
+    Why doesn't my socket have a packet?  -> Socket have a packet
+    Where are the pockets on the port?    -> Pockets on the port
+    I need to reap the zombie             -> Reap the zombie
+    What does the error "Disk full" mean? -> Disk full
+    What about backwards compatibility?   -> Backwards compatibility
+    Reaping the zombie from proctab       -> Zombie, reaping from proctab
+    $c = Mojo::Path->new()                -> new
+
+Currently, captialization (other than rewrites of type type shown
+above) is mostly left for the caller to handle.
+
+=head1 METHODS
+
+=head2 new
+
+Creates a new object of type Pod::Definitions
+
+=head2 parse_file ($filename)
+
+Parse a podfile, or Perl source file. Returns the Pod::Headings
+object, which, as a subclass of Pod::Simple, may give various useful
+information about the parsed document (e.g., the line_count() or
+pod_para_count() methods, or the source_dead() method which will be
+true if the Pod::Simple parser successfully read, and came to the end
+of, a document).
+
+=head2 file
+
+Local path to file as passed to parse_file
+
+=head2 manpage
+
+Full name of manpage (e.g., 'Mojo::Path').
+
+=head2 module
+
+Module leaf name (e.g., 'Path')
+
+=head2 sections
+
+Hash (with the key being the toplevel section, e.g., "FUNCTIONS") of
+arrays of section names, or undef if no sections (other than the
+standard NAME and SEE ALSO) were given in the Pod file
+
+=head1 SEE ALSO
+
+L<Pod::Simple>, L<Pod::Headings>
+
+=head1 SUPPORT
+
+This module is managed in an open GitHub repository,
+(( link here )) Feel free to fork and contribute, or to clone and send patches.
+
+=head1 AUTHOR
+
+This module was written and is maintained by William Lindley
+<wlindley@cpan.org>.
+
+=cut
