@@ -66,5 +66,10 @@ foreach my $parse_file (@file_list) {
     $pod_file->parse_file($parse_file);
 
     # TODO: 2020-10-11 Save the $pod_file object for indexing.
+    # 
+    # Use the hash-of-lists at {sections} as the first-and-second
+    # level references.
+    ; $DB::single = 1;
+    print "x";
 }
 
