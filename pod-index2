@@ -9,9 +9,6 @@ use lib 'lib';
 use feature 'signatures';
 no warnings 'experimental::signatures';
 
-use List::MoreUtils qw(uniq);
-
-# use Pod::Headings;
 use Pod::Definitions;
 
 binmode(STDOUT, ":utf8");
@@ -40,7 +37,6 @@ sub parse_a_file ($filename, $podname) {
     push @pods, $pod_file;
 }
 
-
 foreach my $parse_file (@file_list) {
     # TODO: 2020-10-11 Verify operation with UTF-8 pods.
     if ($parse_file =~ /\./) { # Looks like a filename
@@ -53,3 +49,32 @@ foreach my $parse_file (@file_list) {
         }
     }
 }
+
+; $DB::single = 1;
+print "Foo!";
+
+
+################
+
+sub convert_to_href_text ($human_text) {
+    $human_text =~ s/(\s|\(|=|\[)/-/g;
+    $human_text =~ s/([^a-zA-Z0-9_\-*:])//g;
+    return $human_text;
+}
+
+# sub convert_local_path_to_href ($file) {
+#     $file =~ s{\..+}{}g;
+#     $file =~ s{/}{::}g;
+#     return $file;
+# }
+
+
+
+
+
+
+
+
+# use List::MoreUtils qw(uniq);
+
+1;

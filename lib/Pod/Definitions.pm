@@ -34,12 +34,17 @@ sub sections ($self) { return $self->{sections}; } # Hash (key=toplevel section)
 sub _clean_heading ($original) {
     # Clean headings for index display
     $original =~ s/^\s+//;
-    $original =~ s/\smean\?$//;
+    $original =~ s/\s(?:mean|go)\?$//;
     $original =~ s/\?$//;
+    # Which versions are supported -> Versions supported
+    # How much does... How well is... How many...
+    $original =~ s/^(?:(?:what|which|how|many|much|well|is|are|do)\s+)+(\S.*?)?\b(?:is|are|do)\s+/\u\1/i;
+    $original =~ s/\s{2,}/ /g;
+
     # How can I blip the blop? -> Blip the blop
     # Why doesn't my socket have a packet? -> Socket have a packet
     # Where are the pockets on the port? -> Pockets on the port
-    if ($original =~ m/^((?:(?:who|what|when|where|which|why|how|is|are|did|a|an|the|do|does|don't|doesn't|can|not|I|my|need|to|about|there)\s+|error\s+"|message\s+")+)(.*)$/i) {
+    if ($original =~ m/^((?:(?:who|what|when|where|which|why|how|is|are|did|a|an|the|do|does|don't|doesn't|can|not|I|my|need|to|about|there)\s+|error\s+"\.*|message\s+"\.*)+)(.*)$/i) {
         my ($prefix, $main) = ($1, ucfirst($2));
         $main =~ s/[?"]//g;
         return $main;
@@ -78,8 +83,17 @@ sub _clean_heading ($original) {
 #
 #
 
+sub convert_to_href_text ($human_text) {
+    $human_text =~ s/(\s|\(|=|\[)/-/g;
+    $human_text =~ s/([^a-zA-Z0-9_\-*:])//g;
+    return $human_text;
+}
+
 sub _save_definition ($self, $parser, $attrs, $head1, $text) {
-    push @{$self->{sections}{$head1}}, $text;
+    push @{$self->{sections}{$head1}}, {raw => $text,
+                                        cooked => _clean_heading($text),
+                                        link => $self->manpage().'#'.convert_to_href_text($text),
+                                    };
 }
 
 sub _save_file_manpage ($self, $text) {
@@ -137,14 +151,14 @@ sub parse_file ($self, $file, $podname = undef) {
             $parser->{_save_head2} = $plaintext;
             $parser->{_save_first_para} = 1;
 
-            $self->_save_definition ( $parser, $attrs, $parser->{_save_head1}, _clean_heading($plaintext) );
+            $self->_save_definition ( $parser, $attrs, $parser->{_save_head1}, $plaintext );
 
             1;
         },
         Para => sub ($parser, $elem, $attrs, $plaintext) {
             if ($parser->{_save_first_para}) {
                 # print " .... text: $plaintext\n";
-                $self->$save_next($parser, $elem, $attrs, _clean_heading($plaintext)) if defined $save_next;
+                $self->$save_next($parser, $elem, $attrs, $plaintext) if defined $save_next;
                 undef $save_next;
             }
             $parser->{_save_first_para} = 0;
