@@ -127,7 +127,8 @@ foreach my $heading (keys %{$references}) {
     $heading =~ s/\w+ing\s+to//g;            # ignore, e.g., "trying to" 
     # 'la' here to capture 'a la'
     if ($heading =~ /^(.+?)((?:\s+(?:what|how|is|are|in|on|of|with|through|thru|a|an|the|it|I|I'm|la|can|do|use|using|format|way|so)\b)+)\s+(.+)\z/i) {
-        my ($keywords, $leading_words, $trailing_words) = ($3, $1, $2);
+        my ($leading_words, $modifying_words, $keywords) = ($1, $2, $3);
+        my $cooked = "$keywords, $leading_words$modifying_words";
         my @matched;
         foreach my $check_key (split /\s+/, $keywords) {
             next if $check_key =~ /\b(:?to|in|of)\b/;  # Ignore prepositions, etc.
@@ -139,13 +140,10 @@ foreach my $heading (keys %{$references}) {
                 push @matched, lc($check_key);
             }
         }
-        # If none of the above keywords matched an existing entry, add one.
-        if (scalar @matched) {
-            foreach my $m (@matched) {
-                print " --- $heading -----> $m .... $keywords, $leading_words$trailing_words\n";
-            }
-        } else {
-            print " --- $heading --> $keywords, $leading_words$trailing_words \n";
+        # If none of the above keywords matched an existing entry, use the cooked text.
+        push @matched, $cooked unless (scalar @matched);
+        foreach my $m (@matched) {
+            push @{$see->{$m}{$raw}}, @{$references->{$raw}};
         }
     }
 }
@@ -161,6 +159,30 @@ foreach my $heading (keys %{$references}) {
 # is hosting these cross-references (being mindful not to create links
 # to xref documents which do not exist).
 #
+
+#
+# Merge the See and See-Also tables into the main references entries
+#
+foreach my $source (keys %{$see}) {
+    foreach my $heading (keys %{$see->{$source}}) {
+        my @see_links = @{$see->{$source}{$heading}};
+        my @add_links;
+        foreach my $l (@see_links) {
+            push @add_links, { %{$l}, type => 'see' };
+        }
+        push @{$references->{$source}}, @add_links;
+    }
+}
+
+foreach my $source (keys %{$see_also}) {
+    my @links = @{$see_also->{$source}};
+    my @add_links;
+    foreach my $l (@links) {
+        push @add_links, { %{$l}, type => 'see-also' };
+    }
+    push @{$references->{$source}}, @add_links;
+}
+
 
 #
 # TODO:
