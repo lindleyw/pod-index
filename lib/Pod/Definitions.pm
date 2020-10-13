@@ -44,9 +44,10 @@ sub _clean_heading ($original) {
     # How can I blip the blop? -> Blip the blop
     # Why doesn't my socket have a packet? -> Socket have a packet
     # Where are the pockets on the port? -> Pockets on the port
-    if ($original =~ m/^((?:(?:who|what|when|where|which|why|how|is|are|did|a|an|the|do|does|don't|doesn't|can|not|I|my|need|to|about|there)\s+|error\s+"\.*|message\s+"\.*)+)(.*)$/i) {
+    if ($original =~ m/^((?:(?:who|what|when|where|which|why|how|is|are|did|a|an|the|do|does|don't|doesn't|can|not|I|my|need|to|about|there)\s+|go\s+for|error\s+"\.*|message\s+"\.*)+)(.*)$/i) {
         my ($prefix, $main) = ($1, ucfirst($2));
         $main =~ s/[?"]//g;
+        $main =~ s/^\s+//;
         return $main;
     }
     # Nibbling the carrot -> Carrot, nibbling the
@@ -76,6 +77,10 @@ sub _clean_heading ($original) {
     if ($original =~ m/^\([\$@%][^)]+\)\s*=\s*(?:\$\w+\s*->\s*)?(\w+)/) {
         return $1;
     }
+    # function_name BLOCK LIST [EXPR] -> function_name
+    if ($original =~ m/^((?:\w|_)+)\s+(?:(?:BLOCK|EXPR|LIST|COUNT|ARRAY\d*|VALUE|STRING|ITEM|\.+)\s*)+/) {
+        return $1;
+    }
     return $original;
 }
 
@@ -92,7 +97,8 @@ sub convert_to_href_text ($human_text) {
 sub _save_definition ($self, $parser, $attrs, $head1, $text) {
     push @{$self->{sections}{$head1}}, {raw => $text,
                                         cooked => _clean_heading($text),
-                                        link => $self->manpage().'#'.convert_to_href_text($text),
+                                        link => $self->manpage(),
+                                        link_fragment => convert_to_href_text($text),
                                     };
 }
 
@@ -129,7 +135,14 @@ sub parse_file ($self, $file, $podname = undef) {
 
     return Pod::Headings->new(
         head1 => sub ($parser, $elem, $attrs, $plaintext) {
-            # print " $elem: $plaintext\n";
+            # "Archive::Zip Methods" -> "Methods":
+            $plaintext =~ s/^($self->{manpage}\s+)//i;
+            # Change headings starting in all-uppercase to inital caps
+            # only. Note, "READING CPAN.pm" -> "Reading cpan.pm"
+            # (there is only so much we can do without A.I.)
+            if ($plaintext =~ /^[ \p{Uppercase}]{2,}/) {
+                $plaintext =~ s/^(.)(.*)/\u$1\L$2/;
+            }
             $parser->{_save_head1} = $plaintext;
             undef $parser->{_save_head2};
             $parser->{_save_first_para} = 1;
@@ -155,6 +168,11 @@ sub parse_file ($self, $file, $podname = undef) {
 
             1;
         },
+        head3 => sub ($parser, $elem, $attrs, $plaintext) {
+            # print " $elem: $parser->{_save_head1} / $parser->{_save_head2}: $plaintext\n";
+            $self->_save_definition ( $parser, $attrs, $parser->{_save_head2}, $plaintext );
+            1;
+        },
         Para => sub ($parser, $elem, $attrs, $plaintext) {
             if ($parser->{_save_first_para}) {
                 # print " .... text: $plaintext\n";
@@ -165,6 +183,8 @@ sub parse_file ($self, $file, $podname = undef) {
             1;
         },
         L => 1,  # Return 0 to drop the plaintext passed to the containing element
+        # Possible extension: In 'See Also' sections, accumulate the
+        # actual links from Pod::Simple in the same form with (raw, cooked, link)
     )->parse_file($file);
 }
 

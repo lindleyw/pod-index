@@ -50,31 +50,137 @@ foreach my $parse_file (@file_list) {
     }
 }
 
+################
+#
+# Cross-reference logic
+#
+# These assume the English language.  We do not attempt to parse
+# English generally, only the technical subset typically used in Pod
+# documentation of Perl modules in CPAN.
+#
+# GOAL: Each definition (whether main entry, or under 'see' or 'see
+# also', should point to its defined link in a copy of its source
+# document.
+#
+################
+
+my $references = {};
+my $see = {};
+my $see_also = {};
+
+#
+# Begin to make a cross-reference, by pointing each subheading back to
+# its container.
+#
+foreach my $pod (@pods) {
+    next unless defined $pod->sections();
+    foreach my $section (keys %{$pod->sections()}) {
+        foreach my $definition (@{$pod->sections->{$section}}) {
+            push @{$references->{$definition->{cooked}}}, $definition;
+            # Each main key in the references (e.g., "FUNCTIONS")
+            # should generate a "see..." entry for its entries:
+            push @{$see->{$section}{$definition->{cooked}}}, $definition;
+        }
+    }
+}
+
+#
+# Additionally, for entries that look like:
+#
+#    insert_thing_here
+#
+# 'thing' and 'here' will each obtain a "See also" to
+# insert_thing_here, assuming 'thing' and 'here' are already main
+# entries.
+#
+foreach my $heading (keys %{$references}) {
+    my @subwords = split ( '_', $heading );
+    next unless scalar @subwords > 1;
+    shift @subwords;  # Ignore first word
+    foreach my $subword ( @subwords ) {
+        if (exists $references->{$subword}) {
+            push @{$see_also->{$subword}}, @{$references->{$heading}};
+        }
+    }
+}
+
+# NOT_DONE:
+# Alternately, the above may benefit from "See also" to "thing" and
+# "here" if those words appear as main entries in the cross-reference.
+#
+
+#
+# Furthermore, add cross-references ("See...") as follows:
+#
+#    Searching in sorted lists     -> Sorted lists, searching in
+#    Counting and calculation      -> Calculation, counting and
+#    Operations on sorted lists    -> Sorted lists, operations on
+#    Treatment of an empty list    -> Empty list, treatment of
+#    Help with a concrete version  -> Concrete version, help with
+#
+
+foreach my $heading (keys %{$references}) {
+    my $raw = $heading;                      # Cook the heading below
+    $heading =~ s/\buse\s+case\b/use-case/;  # special case for "use" as an adjective
+    $heading =~ s/\s+with\s+this\s*\z//;     # ignore "...with this" at end
+    $heading =~ s/,.+\z//;                   # Ignore anything after a comma
+    $heading =~ s/\w+ing\s+to//g;            # ignore, e.g., "trying to" 
+    # 'la' here to capture 'a la'
+    if ($heading =~ /^(.+?)((?:\s+(?:what|how|is|are|in|on|of|with|through|thru|a|an|the|it|I|I'm|la|can|do|use|using|format|way|so)\b)+)\s+(.+)\z/i) {
+        my ($keywords, $leading_words, $trailing_words) = ($3, $1, $2);
+        my @matched;
+        foreach my $check_key (split /\s+/, $keywords) {
+            next if $check_key =~ /\b(:?to|in|of)\b/;  # Ignore prepositions, etc.
+            $check_key =~ s/[,.]//g;
+            # print "  [$check_key]";
+            if (exists $references->{$check_key}) {
+                push @matched, $check_key;
+            } elsif (exists $references->{lc($check_key)}) {
+                push @matched, lc($check_key);
+            }
+        }
+        # If none of the above keywords matched an existing entry, add one.
+        if (scalar @matched) {
+            foreach my $m (@matched) {
+                print " --- $heading -----> $m .... $keywords, $leading_words$trailing_words\n";
+            }
+        } else {
+            print " --- $heading --> $keywords, $leading_words$trailing_words \n";
+        }
+    }
+}
+
+#
+# TODO:
+#
+# If Pod::Definitions is updated to save links within the L<> elements
+# in the See Also sections, and if the cross-references generated here
+# are maintained in a database, it might be useful to add a main entry
+# for each module name, with "See Also" links either as given (in the
+# case of L<> pointing to a website) or internally to whatever website
+# is hosting these cross-references (being mindful not to create links
+# to xref documents which do not exist).
+#
+
+#
+# TODO:
+#
+# Maintain a database of official Pod documentation sources, e.g.,
+#
+#   https://metacpan.org/pod/
+#
+# to which our links may be appended, and at which the user may choose
+# to point.  For example, it may be useful to point references within
+# Mojo and Mojolicious to https://docs.mojolicious.org ... However,
+# determining which documents exist there (for example, List::Utils
+# does not) is not defined here.
+
+my $link_base = 'https://metacpan.org/pod/';
+
+
 ; $DB::single = 1;
 print "Foo!";
 
 
-################
-
-sub convert_to_href_text ($human_text) {
-    $human_text =~ s/(\s|\(|=|\[)/-/g;
-    $human_text =~ s/([^a-zA-Z0-9_\-*:])//g;
-    return $human_text;
-}
-
-# sub convert_local_path_to_href ($file) {
-#     $file =~ s{\..+}{}g;
-#     $file =~ s{/}{::}g;
-#     return $file;
-# }
-
-
-
-
-
-
-
-
-# use List::MoreUtils qw(uniq);
 
 1;
