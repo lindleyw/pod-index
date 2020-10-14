@@ -62,7 +62,7 @@ sub _clean_heading ($original) {
         return $1;
     }
     # $variable->function_name(...) -> function_name
-    if ($original =~ m/^\$\w+\s*->\s*(\w+)/) {
+    if ($original =~ m/^\$?\w+\s*->\s*(\w+)/) {
         return $1;
     }
     # Module::Module->function_name(...) -> function_name

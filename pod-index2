@@ -24,12 +24,24 @@ use Pod::Simple::Search;
 my @file_list;
 
 # TODO: Perhaps use one of the Getopt modules to handle switches, etc.
+#
+# TODO:
+#   -t <tag>       Tag this set of podpages in the database
+
+use Getopt::Std;
+my %opts;
+getopts('t:', \%opts);
+my $tag_pages = $opts{t};
 
 push @file_list, @ARGV;
 
 my @pods;
+my @pod_files_processed;
 
 sub parse_a_file ($filename, $podname) {
+
+    push @pod_files_processed, $podname;
+
     my $pod_file = Pod::Definitions->new();
 
     $pod_file->parse_file($filename, $podname);
@@ -183,6 +195,68 @@ foreach my $source (keys %{$see_also}) {
     push @{$references->{$source}}, @add_links;
 }
 
+################
+#
+# Store structure in database
+#
+################
+
+use Mojo::SQLite;
+use Mojo::SQLite::Migrations;
+
+my $dbfile = 'data/pod_index.db';
+
+if (defined $dbfile) {
+
+    # TODO, WL 2020-10-09
+    # * Actually define Migrations and populate a useful database
+    # * Put the logic into Serialize / Storable methods in the objects
+
+    if (! -f $dbfile) {
+        die "database $dbfile does not exist.  Create one like so:\n  sqlite3 $dbfile";
+    }
+    if (! -r $dbfile) {
+        die "database $dbfile exists but is not readable.";
+    }
+
+    my $sql = Mojo::SQLite->new($dbfile);
+    $sql->migrations->from_data->migrate;
+
+    if(! $sql->db->ping) {
+        die "Failed to open database $dbfile.";
+    }
+
+    my $db = $sql->db;
+
+    # Save tags
+    if ($tag_pages) {
+        $db->delete('xref_tags', { name => $tag_pages });
+
+        foreach my $pod_page (@pod_files_processed) {
+            $db->insert('xref_tags', { name => $tag_pages, pod_page => $pod_page } );
+        }
+    }
+
+    # Preliminary pass to delete all rows for modules which we have
+    # processed, preventing duplicates.
+    $db->delete('xref', { pod_page => \@pod_files_processed });
+
+    # Add the references to the database.
+    foreach my $heading (keys %{$references}) {
+        foreach my $ref (@{$references->{$heading}}) {
+            $db->insert('xref', { pod_page => $ref->{link},
+                                  link_fragment => $ref->{link_fragment},
+                                  link_type => $ref->{type},
+                                  entry => $heading,
+                                  cooked_entry => $ref->{cooked},
+                                  raw_entry => $ref->{raw}
+                              });
+        }
+    }
+
+    $sql->db->disconnect;
+}
+
 
 #
 # TODO:
@@ -200,9 +274,36 @@ foreach my $source (keys %{$see_also}) {
 my $link_base = 'https://metacpan.org/pod/';
 
 
-; $DB::single = 1;
-print "Foo!";
-
-
 
 1;
+
+
+__DATA__
+
+
+@@migrations
+-- 1 up
+
+create table xref (
+    pod_page text,
+    link_fragment text,
+    link_type text,
+    entry text,
+    cooked_entry text,
+    raw_entry text
+);
+
+-- 1 down
+
+drop table references;
+
+-- 2 up
+
+create table xref_tags (
+    name text,
+    pod_page text
+);
+
+-- 2 down
+
+drop table xref_tags;
