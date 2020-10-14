@@ -23,15 +23,21 @@ use Pod::Simple::Search;
 
 my @file_list;
 
-# TODO: Perhaps use one of the Getopt modules to handle switches, etc.
 #
-# TODO:
+# Handle switches:
 #   -t <tag>       Tag this set of podpages in the database
+#   -d <dbname>    Location of database file to use
 
 use Getopt::Std;
 my %opts;
-getopts('t:', \%opts);
+getopts('t:d:', \%opts);
 my $tag_pages = $opts{t};
+my $dbfile = $opts{d} // 'data/pod_index.db';
+
+#
+# Remaining arguments are names of POD files, module names, or globs
+# of module names.
+#
 
 push @file_list, @ARGV;
 
@@ -204,13 +210,7 @@ foreach my $source (keys %{$see_also}) {
 use Mojo::SQLite;
 use Mojo::SQLite::Migrations;
 
-my $dbfile = 'data/pod_index.db';
-
 if (defined $dbfile) {
-
-    # TODO, WL 2020-10-09
-    # * Actually define Migrations and populate a useful database
-    # * Put the logic into Serialize / Storable methods in the objects
 
     if (! -f $dbfile) {
         die "database $dbfile does not exist.  Create one like so:\n  sqlite3 $dbfile";
