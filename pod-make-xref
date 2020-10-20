@@ -1,0 +1,188 @@
+#!/usr/bin/env perl
+
+use v5.20;
+
+use strict;
+use warnings;
+
+use lib 'lib';
+use feature 'signatures';
+no warnings 'experimental::signatures';
+
+use Pod::XrefModules;
+
+# binmode(STDOUT, ":utf8");
+
+# Accepts a list of globs to be passed to Pod::Simple::Search.  If any
+# item in the list (e.g., 'Mojo') does not contain any wildcards ('*'
+# or '?'), that item will also be understood to include Pods in that
+# tree (e.g., the glob 'Mojo::*').  An item can also be an explicit
+# filename.
+
+my @file_list;
+
+#
+# Handle switches:
+#   -t <tag>       Tag this set of podpages in the database
+#   -d <dbname>    Location of database file to use
+
+use Getopt::Std;
+my %opts;
+getopts('t:d:', \%opts);
+my $tag_pages = $opts{t};
+my $dbfile = $opts{d} // 'data/pod_index.db';
+
+#
+# Remaining arguments are names of POD files, module names, or globs
+# of module names.
+#
+
+push @file_list, @ARGV;
+
+my $pods = Pod::XrefModules->new()->select(@file_list)->parse;
+
+################
+#
+# Store structure in database
+#
+################
+
+use Mojo::SQLite;
+use Mojo::SQLite::Migrations;
+
+if (defined $dbfile) {
+
+    if (! -f $dbfile) {
+        die "database $dbfile does not exist.  Create one like so:\n  sqlite3 $dbfile";
+    }
+    if (! -r $dbfile) {
+        die "database $dbfile exists but is not readable.";
+    }
+
+    my $sql = Mojo::SQLite->new($dbfile);
+    $sql->migrations->from_data->migrate;
+
+    if(! $sql->db->ping) {
+        die "Failed to open database $dbfile.";
+    }
+
+    my $db = $sql->db;
+
+    # Save tags
+    if ($tag_pages) {
+        $db->delete('xref_tags', { name => $tag_pages });
+
+        foreach my $pod_page ( keys %{$pods->podfiles()} ) {
+            $db->insert('xref_tags', { name => $tag_pages, pod_page => $pod_page } );
+        }
+    }
+
+    # Preliminary pass to delete all rows for modules which we have
+    # processed, preventing duplicates.
+    $db->delete('xref', { pod_page => [ keys %{$pods->podfiles()} ] });
+
+    # Add the references to the database.
+    foreach my $heading (keys %{$pods->references}) {
+        foreach my $ref (@{$pods->references()->{$heading}}) {
+            $db->insert('xref', { pod_page => $ref->{link},
+                                  link_fragment => $ref->{link_fragment},
+                                  link_type => $ref->{type},
+                                  entry => $heading,
+                                  cooked_entry => $ref->{cooked},
+                                  raw_entry => $ref->{raw}
+                              });
+        }
+    }
+
+    $sql->db->disconnect;
+}
+
+1;
+
+__END__
+
+use Mojolicious::Lite;
+
+# Mojolicious::Lite
+plugin Yancy => backend => 'sqlite:' . $dbfile; # mysql, sqlite, dbic...
+
+#
+# TODO: Make a list of checkboxes for all available POD files (those
+# findable by Pod::Simple::Search) and let the user pick any or all of
+# them, with a textbox to name that selection group; save that in the
+# xref_tags table and then parse as above
+#
+
+get '/' => {
+    controller => 'yancy',
+    action => 'list',
+    schema => 'xref',
+    template => 'xref_list',
+} => 'xref.list';
+
+get '/xref/:id' => {
+    controller => 'yancy',
+    action => 'get',
+    schema => 'xref',
+    template => 'xref_get',
+} => 'xref.get';
+
+
+#
+# TODO:
+#
+# Maintain a database of official Pod documentation sources, e.g.,
+#
+#   https://metacpan.org/pod/
+#
+# to which our links may be appended, and at which the user may choose
+# to point.  For example, it may be useful to point references within
+# Mojo and Mojolicious to https://docs.mojolicious.org ... However,
+# determining which documents exist there (for example, List::Utils
+# does not) is not defined here.
+
+my $link_base = 'https://metacpan.org/pod/';
+
+app->start;
+
+
+
+__DATA__
+
+@@xref_list.html.ep
+
+Xref List text and code goes here
+
+@@xref_get.html.ep
+
+Xref Get stuff goes here
+%=$id
+
+@@migrations
+-- 1 up
+
+create table xref (
+    id INTEGER PRIMARY KEY,
+    pod_page text,
+    link_fragment text,
+    link_type text,
+    entry text,
+    cooked_entry text,
+    raw_entry text
+);
+
+-- 1 down
+
+drop table references;
+
+-- 2 up
+
+create table xref_tags (
+    id INTEGER PRIMARY KEY,
+    name text,
+    pod_page text
+);
+
+-- 2 down
+
+drop table xref_tags;

@@ -1,0 +1,98 @@
+#!/usr/bin/env perl
+
+use v5.20;
+
+use strict;
+use warnings;
+
+use lib 'lib';
+use feature 'signatures';
+no warnings 'experimental::signatures';
+
+use Mojolicious::Lite;
+
+my $dbfile = 'data/pod_index.db';
+
+# Mojolicious::Lite
+plugin Yancy => backend => 'sqlite:' . $dbfile; # mysql, sqlite, dbic...
+
+#
+# TODO: Make a list of checkboxes for all available POD files (those
+# findable by Pod::Simple::Search) and let the user pick any or all of
+# them, with a textbox to name that selection group; save that in the
+# xref_tags table and then parse as above
+#
+
+get '/' => {
+    controller => 'yancy',
+    action => 'list',
+    schema => 'xref',
+    template => 'xref_list',
+} => 'xref.list';
+
+get '/xref/:id' => {
+    controller => 'yancy',
+    action => 'get',
+    schema => 'xref',
+    template => 'xref_get',
+} => 'xref.get';
+
+
+#
+# TODO:
+#
+# Maintain a database of official Pod documentation sources, e.g.,
+#
+#   https://metacpan.org/pod/
+#
+# to which our links may be appended, and at which the user may choose
+# to point.  For example, it may be useful to point references within
+# Mojo and Mojolicious to https://docs.mojolicious.org ... However,
+# determining which documents exist there (for example, List::Utils
+# does not) is not defined here.
+
+my $link_base = 'https://metacpan.org/pod/';
+
+app->start;
+
+
+
+__DATA__
+
+@@xref_list.html.ep
+
+Xref List text and code goes here
+
+@@xref_get.html.ep
+
+Xref Get stuff goes here
+%=$id
+
+@@migrations
+-- 1 up
+
+create table xref (
+    id INTEGER PRIMARY KEY,
+    pod_page text,
+    link_fragment text,
+    link_type text,
+    entry text,
+    cooked_entry text,
+    raw_entry text
+);
+
+-- 1 down
+
+drop table references;
+
+-- 2 up
+
+create table xref_tags (
+    id INTEGER PRIMARY KEY,
+    name text,
+    pod_page text
+);
+
+-- 2 down
+
+drop table xref_tags;

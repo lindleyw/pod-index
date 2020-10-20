@@ -11,7 +11,7 @@ no warnings 'experimental::signatures';
 
 use Pod::Definitions;
 
-binmode(STDOUT, ":utf8");
+# binmode(STDOUT, ":utf8");
 
 # Accepts a list of globs to be passed to Pod::Simple::Search.  If any
 # item in the list (e.g., 'Mojo') does not contain any wildcards ('*'
@@ -177,6 +177,10 @@ foreach my $heading (keys %{$references}) {
 # is hosting these cross-references (being mindful not to create links
 # to xref documents which do not exist).
 #
+{
+    1;
+}
+
 
 #
 # Merge the See and See-Also tables into the main references entries
@@ -257,6 +261,32 @@ if (defined $dbfile) {
     $sql->db->disconnect;
 }
 
+use Mojolicious::Lite;
+
+# Mojolicious::Lite
+plugin Yancy => backend => 'sqlite:' . $dbfile; # mysql, sqlite, dbic...
+
+#
+# TODO: Make a list of checkboxes for all available POD files (those
+# findable by Pod::Simple::Search) and let the user pick any or all of
+# them, with a textbox to name that selection group; save that in the
+# xref_tags table and then parse as above
+#
+
+get '/' => {
+    controller => 'yancy',
+    action => 'list',
+    schema => 'xref',
+    template => 'xref_list',
+} => 'xref.list';
+
+get '/xref/:id' => {
+    controller => 'yancy',
+    action => 'get',
+    schema => 'xref',
+    template => 'xref_get',
+} => 'xref.get';
+
 
 #
 # TODO:
@@ -273,18 +303,26 @@ if (defined $dbfile) {
 
 my $link_base = 'https://metacpan.org/pod/';
 
+app->start;
 
-
-1;
 
 
 __DATA__
 
+@@xref_list.html.ep
+
+Xref List text and code goes here
+
+@@xref_get.html.ep
+
+Xref Get stuff goes here
+%=$id
 
 @@migrations
 -- 1 up
 
 create table xref (
+    id INTEGER PRIMARY KEY,
     pod_page text,
     link_fragment text,
     link_type text,
@@ -300,6 +338,7 @@ drop table references;
 -- 2 up
 
 create table xref_tags (
+    id INTEGER PRIMARY KEY,
     name text,
     pod_page text
 );
