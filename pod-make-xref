@@ -26,11 +26,28 @@ my @file_list;
 #   -t <tag>       Tag this set of podpages in the database
 #   -d <dbname>    Location of database file to use
 
+# TODO:
+#   * Default tagname as first module listed
+#   * Select and automatically tag all local podfiles from
+#     Pod::Simple::Search
+#   * Retrieve and handle remote podfiles from URI
+#   * Build a Minion job handler to do the above
+
+
 use Getopt::Std;
 my %opts;
 getopts('t:d:', \%opts);
 my $tag_pages = $opts{t};
+
+#
+# TODO: Use the .conf file
+#
 my $dbfile = $opts{d} // 'data/pod_index.db';
+
+#
+# TODO: Use (from the .conf file) an external URI source for other pods
+#
+
 
 #
 # Remaining arguments are names of POD files, module names, or globs
@@ -68,6 +85,14 @@ if (defined $dbfile) {
 
     my $db = $sql->db;
 
+    #
+    # TODO:
+    #  - Move this into the main program ('app')
+    #  - Tag name and podfile/module-name array are the arguments
+    #  - Password-protect the functionality
+    #
+
+
     # Save tags
     if ($tag_pages) {
         $db->delete('xref_tags', { name => $tag_pages });
@@ -89,7 +114,8 @@ if (defined $dbfile) {
                                   link_type => $ref->{type},
                                   entry => $heading,
                                   cooked_entry => $ref->{cooked},
-                                  raw_entry => $ref->{raw}
+                                  raw_entry => $ref->{raw},
+                                  sequence => $ref->{sequence}
                               });
         }
     }
@@ -98,54 +124,6 @@ if (defined $dbfile) {
 }
 
 1;
-
-__END__
-
-use Mojolicious::Lite;
-
-# Mojolicious::Lite
-plugin Yancy => backend => 'sqlite:' . $dbfile; # mysql, sqlite, dbic...
-
-#
-# TODO: Make a list of checkboxes for all available POD files (those
-# findable by Pod::Simple::Search) and let the user pick any or all of
-# them, with a textbox to name that selection group; save that in the
-# xref_tags table and then parse as above
-#
-
-get '/' => {
-    controller => 'yancy',
-    action => 'list',
-    schema => 'xref',
-    template => 'xref_list',
-} => 'xref.list';
-
-get '/xref/:id' => {
-    controller => 'yancy',
-    action => 'get',
-    schema => 'xref',
-    template => 'xref_get',
-} => 'xref.get';
-
-
-#
-# TODO:
-#
-# Maintain a database of official Pod documentation sources, e.g.,
-#
-#   https://metacpan.org/pod/
-#
-# to which our links may be appended, and at which the user may choose
-# to point.  For example, it may be useful to point references within
-# Mojo and Mojolicious to https://docs.mojolicious.org ... However,
-# determining which documents exist there (for example, List::Utils
-# does not) is not defined here.
-
-my $link_base = 'https://metacpan.org/pod/';
-
-app->start;
-
-
 
 __DATA__
 
@@ -163,12 +141,13 @@ Xref Get stuff goes here
 
 create table xref (
     id INTEGER PRIMARY KEY,
-    pod_page text,
-    link_fragment text,
     link_type text,
     entry text,
+    raw_entry text,
     cooked_entry text,
-    raw_entry text
+    pod_page text,
+    link_fragment text,
+    sequence integer
 );
 
 -- 1 down

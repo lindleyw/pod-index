@@ -2,19 +2,22 @@
 
 use v5.20;
 
-use strict;
-use warnings;
-
 use lib 'lib';
-use feature 'signatures';
-no warnings 'experimental::signatures';
 
-use Mojolicious::Lite;
+use Mojolicious::Lite -signatures;
 
-my $dbfile = 'data/pod_index.db';
+plugin 'Config';
 
-# Mojolicious::Lite
-plugin Yancy => backend => 'sqlite:' . $dbfile; # mysql, sqlite, dbic...
+my $dbfile = app->config('db') // 'data/pod_index.db';
+
+plugin Yancy => backend => 'sqlite:' . $dbfile, # mysql, sqlite, dbic...
+schema =>  {
+    xref => {  'x-list-columns' => [ qw( id entry link_type cooked_entry pod_page link_fragment)],
+               'x-view-item-url' => '/xref-view-item/{id}',
+               'x-view-url' => '/xref-view',
+           },
+},
+;
 
 #
 # TODO: Make a list of checkboxes for all available POD files (those
@@ -37,6 +40,13 @@ get '/xref/:id' => {
     template => 'xref_get',
 } => 'xref.get';
 
+get '/entry/:entry' => {
+    template => 'xref_entry',
+} => 'xref.entry';
+
+get '/xref-view-item/:id' => {
+    template => 'xref_view',
+} => 'xref.view';
 
 #
 # TODO:
@@ -51,48 +61,39 @@ get '/xref/:id' => {
 # determining which documents exist there (for example, List::Utils
 # does not) is not defined here.
 
-my $link_base = 'https://metacpan.org/pod/';
-
 app->start;
 
 
 
 __DATA__
 
+@@xref_view.html.ep
+
+<%== $id %>
+<%== dumper($c->yancy->get('xref',$id)) %>
+
+@@xref_entry.html.ep
+
+<%== param('tag') %>
+<!-- if 'tag' param specified, we want where pod_page IN (pod_page from xref_tags where xref_tags.name == param('tag')) -->
+<%== dumper($c->yancy->list('xref', { entry => $entry,
+                                      (defined param('tag')) ? ( pod_page => { -in => \['select pod_page from xref_tags where name = ?', param('tag')] } ) : (),
+                                  } , { order_by => ['pod_page', 'entry'] } )); %>
+
 @@xref_list.html.ep
 
 Xref List text and code goes here
+
+% for my $item ( @{ stash 'items' } ) {
+    <h1><%= $item->{entry} %></h1>
+    <%== $item->{id} %>.
+    <% my $u = Mojo::URL->new( app->config('pod_base') )->path( $item->{pod_page} )->fragment( $item->{link_fragment} ); %>
+    <a href="<%== $u %>"><%== $item->{cooked_entry} %></a>
+    ( <%== $item->{raw_entry} %> )
+% }
 
 @@xref_get.html.ep
 
 Xref Get stuff goes here
 %=$id
 
-@@migrations
--- 1 up
-
-create table xref (
-    id INTEGER PRIMARY KEY,
-    pod_page text,
-    link_fragment text,
-    link_type text,
-    entry text,
-    cooked_entry text,
-    raw_entry text
-);
-
--- 1 down
-
-drop table references;
-
--- 2 up
-
-create table xref_tags (
-    id INTEGER PRIMARY KEY,
-    name text,
-    pod_page text
-);
-
--- 2 down
-
-drop table xref_tags;
