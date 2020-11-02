@@ -73,12 +73,25 @@ __DATA__
 <%== dumper($c->yancy->get('xref',$id)) %>
 
 @@xref_entry.html.ep
-
-<%== param('tag') %>
-<!-- if 'tag' param specified, we want where pod_page IN (pod_page from xref_tags where xref_tags.name == param('tag')) -->
-<%== dumper($c->yancy->list('xref', { entry => $entry,
-                                      (defined param('tag')) ? ( pod_page => { -in => \['select pod_page from xref_tags where name = ?', param('tag')] } ) : (),
-                                  } , { order_by => ['pod_page', 'entry'] } )); %>
+<%
+stash ('items', [$c->yancy->list('xref', { entry => $entry,
+                                      (defined param('tag')) ?
+                                      ( pod_page => { -in => \['select pod_page from xref_tags where name = ?',
+                                                      param('tag')] } ) : (),
+                        } , { order_by => ['link_type', 'pod_page', 'entry'] }  )]);
+%>
+% my $last_link_type;
+% my %type_text = ( see => 'See:', 'see-also' => 'See also:' );
+% for my $item ( @{ stash 'items' } ) {
+% my $link_text = (defined $item->{link_type}) ? $item->{cooked_entry} : $item->{pod_page};
+% if ( ($item->{link_type} // '') ne ($last_link_type // '')) {
+%        $last_link_type = $item->{link_type};
+%        if (defined $last_link_type) {
+<i><%== $type_text{$item->{link_type}} %></i>
+%        }
+% }
+    <a href="<%== Mojo::URL->new( config('pod_base') )->path($item->{pod_page})->fragment($item->{link_fragment})->to_string %>"><%== $link_text %></a>
+% }
 
 @@xref_list.html.ep
 
