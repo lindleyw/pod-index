@@ -64,6 +64,12 @@ get '/xref-view-item/:id' => {
 app->start;
 
 
+#
+# TODO:
+# We also want index tabs built something like:
+# select distinct(upper(substr(cooked_entry ,1,1))) as QQ from xref order by qq asc;
+#
+
 
 __DATA__
 
@@ -73,6 +79,12 @@ __DATA__
 <%== dumper($c->yancy->get('xref',$id)) %>
 
 @@xref_entry.html.ep
+<h1><%== $entry %>
+% if ( defined param('tag') ) {
+    <em>in</em>
+    <%== param('tag') %>
+% }
+</h1>
 <%
 stash ('items', [$c->yancy->list('xref', { entry => $entry,
                                       (defined param('tag')) ?
@@ -90,7 +102,11 @@ stash ('items', [$c->yancy->list('xref', { entry => $entry,
 <i><%== $type_text{$item->{link_type}} %></i>
 %        }
 % }
+% if (defined $item->{link_type}) {
+    <a href="<%== $c->url_with(entry => $item->{cooked_entry}) %>"><%== $link_text %></a>
+% } else {
     <a href="<%== Mojo::URL->new( config('pod_base') )->path($item->{pod_page})->fragment($item->{link_fragment})->to_string %>"><%== $link_text %></a>
+% }
 % }
 
 @@xref_list.html.ep
